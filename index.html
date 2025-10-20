@@ -1126,7 +1126,7 @@
         }
 
         function renderLogin() {
-            return '<div class="login-box"><h2>Admin-Login</h2><div class="warning-box" style="margin-bottom: 20px; font-size: 14px;"><strong>⚠️ Hinweis:</strong><br>Dies ist eine Demo-Authentifizierung.</div><form onsubmit="handleLogin(event); return false;"><input type="password" name="password" class="input" placeholder="Passwort" required><button type="submit" class="btn" style="width: 100%; margin-top: 15px;">Einloggen</button></form></div>';
+            return '<div class="login-box"><h2>Admin-Login</h2><form onsubmit="handleLogin(event); return false;"><input type="password" name="password" class="input" placeholder="Passwort" required><button type="submit" class="btn" style="width: 100%; margin-top: 15px;">Einloggen</button></form></div>';
         }
 
         function attachEventListeners() {
