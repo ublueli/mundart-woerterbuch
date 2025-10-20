@@ -184,7 +184,18 @@
                         throw new Error('HTTP ' + res.status + ': ' + error);
                     });
                 }
-                return options.method === 'DELETE' ? { success: true } : res.json();
+                
+                if (options.method === 'DELETE') {
+                    return { success: true };
+                }
+                
+                if (res.status === 204) {
+                    return { success: true };
+                }
+                
+                return res.text().then(function(text) {
+                    return text ? JSON.parse(text) : {};
+                });
             }).catch(function(error) {
                 console.error('API Error:', error);
                 throw error;
