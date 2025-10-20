@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schweizer Mundart-Wörterbuch - Vollversion v2.0</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; }
+        .header { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 0; position: sticky; top: 0; z-index: 100; }
+        .header h1 { text-align: center; padding: 20px; color: #1f2937; border-bottom: 1px solid #e5e7eb; }
+        .nav { display: flex; justify-content: center; background: #f9fafb; flex-wrap: wrap; }
+        .nav-btn { padding: 15px 30px; border: none; background: transparent; color: #6b7280; cursor: pointer; font-size: 16px; font-weight: 500; border-bottom: 3px solid transparent; transition: all 0.2s; }
+        .nav-btn:hover { color: #2563eb; background: #eff6ff; }
+        .nav-btn.active { color: #2563eb; border-bottom-color: #2563eb; background: white; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 30px 20px; }
+        .search-box { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 30px; }
+        .search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 15px; }
+        .form-grid { display: grid; gap: 15px; }
+        .form-actions { margin-top: 20px; display: flex; gap: 10px; }
+        .input { width: 100%; padding: 12px 15px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 15px; transition: border 0.2s; }
+        .input:focus { outline: none; border-color: #2563eb; }
+        select.input { cursor: pointer; }
+        textarea.input { min-height: 100px; font-family: inherit; resize: vertical; }
+        .btn { padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; transition: background 0.2s; }
+        .btn:hover { background: #1d4ed8; }
+        .btn:disabled { background: #d1d5db; cursor: not-allowed; }
+        .btn-secondary { background: #6b7280; }
+        .btn-secondary:hover:not(:disabled) { background: #4b5563; }
+        .btn-danger { background: #ef4444; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-success { background: #10b981; }
+        .btn-success:hover { background: #059669; }
+        .card { background: white; padding: 20px; margin-bottom: 15px; border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h3 { color: #2563eb; margin-bottom: 12px; font-size: 20px; }
+        .card-row { margin: 8px 0; color: #4b5563; line-height: 1.6; }
+        .card-label { font-weight: 600; color: #1f2937; }
+        .empty { text-align: center; padding: 60px 20px; color: #9ca3af; font-size: 16px; }
+        .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        .warning-box { background: #fef3c7; border: 2px solid #f59e0b; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .success-box { background: #d1fae5; border: 2px solid #10b981; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .error-box { background: #fee2e2; border: 2px solid #ef4444; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .info-box { background: #dbeafe; border: 2px solid #3b82f6; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .info-content { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .info-content h2 { color: #2563eb; margin: 25px 0 15px 0; font-size: 24px; }
+        .info-content h2:first-child { margin-top: 0; }
+        .info-content p { margin-bottom: 15px; line-height: 1.6; color: #4b5563; }
+        .info-content ul { margin-bottom: 15px; line-height: 1.8; margin-left: 20px; }
+        .pending-badge { background: #fbbf24; color: white; padding: 4px 12px; border-radius: 12px; font-size: 13px; font-weight: 600; display: inline-block; margin-left: 8px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #e5e7eb; flex-wrap: wrap; }
+        .tab-btn { padding: 12px 24px; border: none; background: transparent; color: #6b7280; cursor: pointer; font-size: 15px; font-weight: 500; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+        .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+        .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+        .page-btn { padding: 8px 16px; background: white; border: 2px solid #e5e7eb; border-radius: 6px; cursor: pointer; color: #6b7280; font-weight: 500; }
+        .page-btn:hover { border-color: #2563eb; color: #2563eb; }
+        .page-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+        .page-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .loading { text-align: center; padding: 40px; color: #6b7280; }
+        .spinner { border: 3px solid #e5e7eb; border-top: 3px solid #2563eb; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .toast { position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 1000; animation: slideIn 0.3s ease-out; max-width: 400px; }
+        @keyframes slideIn { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        .toast.success { background: #10b981; }
+        .toast.error { background: #ef4444; }
+        .toast.warning { background: #f59e0b; }
+        .progress-bar { width: 100%; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin-top: 15px; }
+        .progress-fill { height: 100%; background: #2563eb; transition: width 0.3s ease; }
+        .login-box { max-width: 400px; margin: 100px auto; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .login-box h2 { margin-bottom: 25px; color: #1f2937; }
+        .admin-table-container { width: 100%; overflow-x: auto; margin-top: 20px; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .admin-table { width: 100%; min-width: 1400px; border-collapse: collapse; }
+        .admin-table thead { background: #f3f4f6; position: sticky; top: 0; z-index: 10; }
+        .admin-table th { padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb; font-weight: 600; color: #1f2937; }
+        .admin-table td { padding: 12px; border-bottom: 1px solid #e5e7eb; }
+        .admin-table tr:hover { background: #f9fafb; }
+        .editable-cell { min-width: 100px; cursor: text; border: 1px solid transparent; padding: 4px; border-radius: 4px; }
+        .editable-cell:focus { outline: none; border-color: #2563eb; background: white; }
+        .editable-cell:hover { border-color: #d1d5db; }
+        .delete-row-btn { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .delete-row-btn:hover { background: #dc2626; }
+        .checkbox { width: 18px; height: 18px; cursor: pointer; }
+        .mapping-grid { display: grid; grid-template-columns: 1fr auto 1fr; gap: 15px; align-items: center; margin-bottom: 15px; }
+        .mapping-arrow { font-size: 20px; color: #6b7280; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .modal-close { background: #e5e7eb; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; }
+        .modal-close:hover { background: #d1d5db; }
+        .reim-section { margin: 20px 0; }
+        .reim-section h3 { color: #2563eb; margin-bottom: 15px; font-size: 20px; padding-left: 10px; border-left: 4px solid #2563eb; }
+        @media (max-width: 768px) {
+            .nav-btn { padding: 12px 20px; font-size: 14px; }
+            .search-grid { grid-template-columns: 1fr; }
+            .toolbar { flex-direction: column; align-items: stretch; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🗣️ Schweizer Mundart-Wörterbuch</h1>
+        <p style="text-align: center; color: #6b7280; padding: 0 20px 15px; border-bottom: 1px solid #e5e7eb;">
+            Dialekte aus Luzern, Aargau, Solothurn und Bern - Vollversion 2.0
+        </p>
+        <div class="nav" id="mainNav"></div>
+    </div>
+    <div class="container" id="content"></div>
+    <div id="toastContainer"></div>
+    <div id="modal" class="modal"></div>
+
+    <script>
+        var CONFIG = {
+            SUPABASE_URL: 'https://owigtnvkqrhclqhfppxf.supabase.co',
+            SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93aWd0bnZrcXJoY2xxaGZwcHhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjQyOTIsImV4cCI6MjA3NjIwMDI5Mn0.gN0tNzN73oa9Fr-zoFgLGlkat4SypGV5B3bzdZjYFyo',
+            ADMIN_PASSWORD: 'mundart2024',
+            ITEMS_PER_PAGE: 50,
+            DEBOUNCE_DELAY: 300
+        };
+
+        var state = {
+            currentView: 'woerterbuch',
+            adminTab: 'freigaben',
+            isAdmin: false,
+            woerter: [],
+            pendingChanges: [],
+            currentPage: 1,
+            currentEditIndex: 0,
+            isNewEntry: true,
+            showUnreineReime: false,
+            filter: { mundart: '', deutsch: '', wortart: '', reim: '' },
+            searchDebounceTimer: null,
+            selectedRows: new Set(),
+            csvData: []
+        };
+
+        function debounce(func, delay) {
+            return function() {
+                var args = arguments;
+                var context = this;
+                clearTimeout(state.searchDebounceTimer);
+                state.searchDebounceTimer = setTimeout(function() {
+                    func.apply(context, args);
+                }, delay);
+            };
+        }
+
+        function showToast(message, type) {
+            var container = document.getElementById('toastContainer');
+            var toast = document.createElement('div');
+            toast.className = 'toast ' + type;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(function() { toast.remove(); }, 3000);
+        }
+
+        function sanitizeInput(input) {
+            if (typeof input !== 'string') return '';
+            return input.trim().replace(/[<>]/g, '');
+        }
+
+        function showModal(title, content) {
+            var modal = document.getElementById('modal');
+            modal.innerHTML = '<div class="modal-content"><div class="modal-header"><h2>' + title + '</h2><button class="modal-close" onclick="closeModal()">×</button></div>' + content + '</div>';
+            modal.classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        function supabaseCall(endpoint, options) {
+            options = options || {};
+            return fetch(CONFIG.SUPABASE_URL + '/rest/v1/' + endpoint, {
+                method: options.method || 'GET',
+                headers: Object.assign({
+                    'apikey': CONFIG.SUPABASE_KEY,
+                    'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+                    'Content-Type': 'application/json'
+                }, options.headers || {}),
+                body: options.body
+            }).then(function(res) {
+                if (!res.ok) {
+                    return res.text().then(function(error) {
+                        throw new Error('HTTP ' + res.status + ': ' + error);
+                    });
+                }
+                return options.method === 'DELETE' ? { success: true } : res.json();
+            }).catch(function(error) {
+                console.error('API Error:', error);
+                throw error;
+            });
+        }
+
+        function loadData() {
+            var content = document.getElementById('content');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 20px;">Lade Daten...</p></div>';
+            
+            loadAllWoerter().then(function(allWoerter) {
+                return supabaseCall('pending_changes?select=*&order=created_at.desc').then(function(changesData) {
+                    state.woerter = allWoerter || [];
+                    state.pendingChanges = changesData || [];
+                    render();
+                });
+            }).catch(function(error) {
+                console.error('Ladefehler:', error);
+                document.getElementById('content').innerHTML = '<div class="error-box" style="max-width:800px;margin:40px auto;"><h2 style="margin-bottom: 15px;">⚠️ Verbindungsfehler</h2><p style="margin-bottom: 15px;"><strong>Fehler:</strong> ' + error.message + '</p><button class="btn" onclick="loadData()" style="margin-top: 15px;">🔄 Erneut versuchen</button></div>';
+            });
+        }
+
+        function loadAllWoerter() {
+            var allData = [];
+            var pageSize = 1000;
+            var offset = 0;
+            
+            function loadBatch() {
+                var url = 'woerter?select=*&order=begriff.asc&limit=' + pageSize + '&offset=' + offset;
+                return supabaseCall(url).then(function(batch) {
+                    if (batch && batch.length > 0) {
+                        allData = allData.concat(batch);
+                        offset += pageSize;
+                        if (batch.length < pageSize) {
+                            return allData;
+                        }
+                        return loadBatch();
+                    }
+                    return allData;
+                });
+            }
+            
+            return loadBatch();
+        }
+
+        function normalizeForReim(text) {
+            if (!text) return '';
+            return text.toLowerCase().trim();
+        }
+
+        function getVowelPattern(text) {
+            var vowels = 'aeiouäöü';
+            return text.split('').filter(function(c) { return vowels.includes(c); }).join('');
+        }
+
+        function findReimeForBegriff(searchTerm, includeUnreine) {
+            var normalizedSearch = normalizeForReim(searchTerm);
+            var rein = [];
+            var unrein = [];
+            
+            if (!normalizedSearch) return { rein: rein, unrein: unrein };
+            
+            state.woerter.forEach(function(wort) {
+                if (!wort.reim || !wort.begriff) return;
+                
+                var normalizedBegriff = normalizeForReim(wort.begriff);
+                if (normalizedBegriff === normalizedSearch) return;
+                
+                var normalizedReim = normalizeForReim(wort.reim);
+                var searchWord = state.woerter.find(function(w) {
+                    return normalizeForReim(w.begriff) === normalizedSearch;
+                });
+                var searchReim = searchWord ? searchWord.reim : null;
+                
+                if (searchReim) {
+                    var normalizedSearchReim = normalizeForReim(searchReim);
+                    
+                    if (normalizedReim === normalizedSearchReim) {
+                        rein.push(wort);
+                    } else if (includeUnreine) {
+                        var vowelPattern1 = getVowelPattern(normalizedReim);
+                        var vowelPattern2 = getVowelPattern(normalizedSearchReim);
+                        
+                        if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
+                            unrein.push(wort);
+                        }
+                    }
+                } else {
+                    if (normalizedReim.includes(normalizedSearch) || normalizedBegriff.includes(normalizedSearch)) {
+                        rein.push(wort);
+                    } else if (includeUnreine) {
+                        var vowelPattern1 = getVowelPattern(normalizedBegriff);
+                        var vowelPattern2 = getVowelPattern(normalizedSearch);
+                        
+                        if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 1) {
+                            unrein.push(wort);
+                        }
+                    }
+                }
+            });
+            
+            return { rein: rein, unrein: unrein };
+        }
+
+        function exportAllCSV() {
+            var headers = ['Begriff', 'Reim', 'Wortart', 'Synonyme', 'Bedeutung', 'Beispielsatz', 'Bemerkung'];
+            var rows = [headers];
+            
+            state.woerter.forEach(function(w) {
+                rows.push([
+                    w.begriff || '',
+                    w.reim || '',
+                    w.wortart || '',
+                    w.synonyme || '',
+                    w.bedeutung || '',
+                    w.beispielsatz || '',
+                    w.bemerkung || ''
+                ]);
+            });
+            
+            var csvContent = rows.map(function(row) {
+                return row.map(function(cell) {
+                    var str = String(cell).replace(/"/g, '""');
+                    return str.includes(',') || str.includes('"') || str.includes('\n') ? '"' + str + '"' : str;
+                }).join(',');
+            }).join('\n');
+            
+            var blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+            var link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'mundart-export-alle-' + state.woerter.length + '-eintraege-' + new Date().toISOString().split('T')[0] + '.csv';
+            link.click();
+            showToast('✓ Alle ' + state.woerter.length + ' Einträge exportiert!', 'success');
+        }
+
+        function filterWoerter() {
+            var filtered = state.woerter;
+            
+            if (state.filter.mundart.trim()) {
+                var term = state.filter.mundart.toLowerCase();
+                filtered = filtered.filter(function(w) {
+                    return w.begriff && w.begriff.toLowerCase().includes(term);
+                });
+            }
+            
+            if (state.filter.deutsch.trim()) {
+                var term = state.filter.deutsch.toLowerCase();
+                filtered = filtered.filter(function(w) {
+                    return (w.synonyme && w.synonyme.toLowerCase().includes(term)) ||
+                           (w.bedeutung && w.bedeutung.toLowerCase().includes(term));
+                });
+            }
+            
+            if (state.filter.wortart && state.filter.wortart !== 'alle') {
+                filtered = filtered.filter(function(w) {
+                    return w.wortart && w.wortart.toLowerCase() === state.filter.wortart.toLowerCase();
+                });
+            }
+            
+            return filtered;
+        }
+
+        function renderCard(w) {
+            var html = '<div class="card"><h3>' + w.begriff + '</h3>';
+            if (w.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + w.reim + '</div>';
+            if (w.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + w.wortart + '</div>';
+            if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + w.synonyme + '</div>';
+            if (w.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + w.bedeutung + '</div>';
+            if (w.beispielsatz) html += '<div class="card-row"><span class="card-label">Beispiel:</span> <em>"' + w.beispielsatz + '"</em></div>';
+            if (w.bemerkung) html += '<div class="card-row"><span class="card-label">Bemerkung:</span> ' + w.bemerkung + '</div>';
+            html += '</div>';
+            return html;
+        }
+
+        function renderWoerterbuch() {
+            var filtered = filterWoerter();
+            var wortarten = ['alle'].concat(Array.from(new Set(state.woerter.filter(function(w) { return w.wortart; }).map(function(w) { return w.wortart; }))));
+            
+            var startIndex = (state.currentPage - 1) * CONFIG.ITEMS_PER_PAGE;
+            var endIndex = startIndex + CONFIG.ITEMS_PER_PAGE;
+            var paginated = filtered.slice(startIndex, endIndex);
+            
+            var html = '<div class="search-box"><div class="search-grid">';
+            html += '<input type="text" id="search-mundart" class="input" placeholder="Mundartbegriff suchen..." value="' + state.filter.mundart + '">';
+            html += '<input type="text" id="search-deutsch" class="input" placeholder="Deutsche Entsprechung..." value="' + state.filter.deutsch + '">';
+            html += '<select id="search-wortart" class="input"><option value="alle">Alle Wortarten</option>';
+            wortarten.filter(function(w) { return w !== 'alle'; }).forEach(function(w) {
+                html += '<option value="' + w + '"' + (state.filter.wortart === w ? ' selected' : '') + '>' + w + '</option>';
+            });
+            html += '</select></div><div style="margin-top: 10px; color: #6b7280; font-size: 14px;">' + filtered.length + ' Einträge gefunden</div></div>';
+            
+            if (paginated.length === 0) {
+                html += '<div class="empty">Keine Einträge gefunden</div>';
+            } else {
+                paginated.forEach(function(w) { html += renderCard(w); });
+            }
+            
+            return html;
+        }
+
+        function renderReimlexikon() {
+            var searchTerm = state.filter.reim || '';
+            var reime = searchTerm.trim() ? findReimeForBegriff(searchTerm, state.showUnreineReime) : { rein: [], unrein: [] };
+            
+            var html = '<div class="search-box">';
+            html += '<input type="text" id="search-reim" class="input" placeholder="Mundartbegriff eingeben (z.B. singe)..." value="' + searchTerm + '">';
+            
+            if (searchTerm.trim()) {
+                html += '<div style="margin-top: 15px;"><label style="display: flex; align-items: center; cursor: pointer;">';
+                html += '<input type="checkbox" id="toggle-unreine"' + (state.showUnreineReime ? ' checked' : '') + ' style="margin-right: 8px; width: 18px; height: 18px; cursor: pointer;">';
+                html += '<span>Auch unreine Reime anzeigen (ähnliche Vokalstruktur)</span></label></div>';
+            }
+            
+            html += '</div>';
+            
+            if (searchTerm.trim()) {
+                html += '<div class="reim-section"><h3>Reine Reime (' + reime.rein.length + ')</h3>';
+                if (reime.rein.length === 0) {
+                    html += '<div class="empty">Keine reinen Reime gefunden</div>';
+                } else {
+                    reime.rein.forEach(function(w) { html += renderCard(w); });
+                }
+                html += '</div>';
+                
+                if (state.showUnreineReime) {
+                    html += '<div class="reim-section"><h3>Unreine Reime (' + reime.unrein.length + ')</h3>';
+                    if (reime.unrein.length === 0) {
+                        html += '<div class="empty">Keine unreinen Reime gefunden</div>';
+                    } else {
+                        reime.unrein.forEach(function(w) { html += renderCard(w); });
+                    }
+                    html += '</div>';
+                }
+            } else {
+                html += '<div class="empty">Gib einen Mundartbegriff ein, um Reime zu finden</div>';
+            }
+            
+            return html;
+        }
+
+        function renderBearbeiten() {
+            var wort = state.isNewEntry ? {} : (state.woerter[state.currentEditIndex] || {});
+            var hasPrev = !state.isNewEntry && state.currentEditIndex > 0;
+            var hasNext = !state.isNewEntry && state.currentEditIndex < state.woerter.length - 1;
+            
+            var html = '<div class="success-box"><strong>✨ Hilf mit, das Wörterbuch zu erweitern!</strong><br>';
+            html += (state.isNewEntry ? 'Füge einen neuen Begriff hinzu.' : 'Durchblättere die Begriffe und ergänze fehlende Informationen.') + ' Alle Änderungen werden geprüft.</div>';
+            html += '<div class="search-box"><div class="toolbar">';
+            html += '<h2>' + (state.isNewEntry ? 'Neuer Begriff' : 'Bearbeiten: ' + (wort.begriff || 'Begriff') + ' (' + (state.currentEditIndex + 1) + ' / ' + state.woerter.length + ')') + '</h2>';
+            html += '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
+            if (!state.isNewEntry) {
+                html += '<button class="btn btn-secondary" onclick="navigateEntry(-1)"' + (!hasPrev ? ' disabled' : '') + '>← Vorheriger</button>';
+                html += '<button class="btn btn-secondary" onclick="navigateEntry(1)"' + (!hasNext ? ' disabled' : '') + '>Nächster →</button>';
+            }
+            html += '<button class="btn" onclick="toggleNewEntry()">' + (state.isNewEntry ? '✏ Bearbeitungsmodus' : '+ Neuer Begriff') + '</button>';
+            html += '</div></div>';
+            html += '<form id="edit-form" onsubmit="saveFormEntry(event); return false;"><div class="form-grid">';
+            html += '<input type="text" name="begriff" class="input" placeholder="Mundartbegriff * (z.B. aabändle)" value="' + (wort.begriff || '') + '"' + (!state.isNewEntry ? ' readonly style="background: #f3f4f6;"' : '') + ' required>';
+            html += '<input type="text" name="reim" class="input" placeholder="Reim (z.B. ändle)" value="' + (wort.reim || '') + '">';
+            html += '<input type="text" name="wortart" class="input" placeholder="Wortart (z.B. Verb)" value="' + (wort.wortart || '') + '">';
+            html += '<input type="text" name="synonyme" class="input" placeholder="Synonyme / Deutsche Übersetzung" value="' + (wort.synonyme || '') + '">';
+            html += '<textarea name="bedeutung" class="input" placeholder="Bedeutung">' + (wort.bedeutung || '') + '</textarea>';
+            html += '<textarea name="beispielsatz" class="input" placeholder="Beispielsatz">' + (wort.beispielsatz || '') + '</textarea>';
+            html += '<textarea name="bemerkung" class="input" placeholder="Bemerkungen">' + (wort.bemerkung || '') + '</textarea>';
+            html += '</div><div class="form-actions">';
+            html += '<button type="submit" class="btn">' + (state.isNewEntry ? 'Neuen Begriff vorschlagen' : 'Änderungen vorschlagen') + '</button>';
+            html += '</div></form></div>';
+            return html;
+        }
+
+        function navigateEntry(dir) {
+            if (dir < 0 && state.currentEditIndex > 0) state.currentEditIndex--;
+            else if (dir > 0 && state.currentEditIndex < state.woerter.length - 1) state.currentEditIndex++;
+            render();
+        }
+
+        function toggleNewEntry() {
+            state.isNewEntry = !state.isNewEntry;
+            state.currentEditIndex = 0;
+            render();
+        }
+
+        function saveFormEntry(event) {
+            event.preventDefault();
+            var formData = new FormData(event.target);
+            var begriff = formData.get('begriff').trim();
+            
+            if (!begriff || begriff.length < 2) {
+                showToast('Begriff muss mindestens 2 Zeichen lang sein', 'error');
+                return;
+            }
+            
+            if (state.isNewEntry) {
+                if (state.woerter.find(function(w) { return w.begriff && w.begriff.toLowerCase() === begriff.toLowerCase(); })) {
+                    showToast('Der Begriff "' + begriff + '" existiert bereits!', 'error');
+                    return;
+                }
+                if (state.pendingChanges.find(function(c) { return c.action === 'create' && c.begriff && c.begriff.toLowerCase() === begriff.toLowerCase(); })) {
+                    showToast('Der Begriff "' + begriff + '" wurde bereits vorgeschlagen.', 'warning');
+                    return;
+                }
+            }
+            
+            var data = {
+                action: state.isNewEntry ? 'create' : 'edit',
+                wort_id: state.isNewEntry ? null : (state.woerter[state.currentEditIndex] ? state.woerter[state.currentEditIndex].id : null),
+                begriff: sanitizeInput(begriff),
+                reim: sanitizeInput(formData.get('reim')) || null,
+                wortart: sanitizeInput(formData.get('wortart')) || null,
+                synonyme: sanitizeInput(formData.get('synonyme')) || null,
+                bedeutung: sanitizeInput(formData.get('bedeutung')) || null,
+                beispielsatz: sanitizeInput(formData.get('beispielsatz')) || null,
+                bemerkung: sanitizeInput(formData.get('bemerkung')) || null,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            };
+            
+            supabaseCall('pending_changes', {
+                method: 'POST',
+                body: JSON.stringify(data),
+                headers: { 'Prefer': 'return=representation' }
+            }).then(function() {
+                showToast(state.isNewEntry ? 'Neuer Begriff vorgeschlagen! ✓' : 'Änderung vorgeschlagen! ✓', 'success');
+                return loadData();
+            }).catch(function(error) {
+                showToast('Fehler beim Speichern: ' + error.message, 'error');
+            });
+        }
+
+        function parseCSVLine(line) {
+            var result = [];
+            var current = '';
+            var inQuotes = false;
+            
+            for (var i = 0; i < line.length; i++) {
+                var char = line[i];
+                
+                if (char === '"') {
+                    if (inQuotes && line[i + 1] === '"') {
+                        current += '"';
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current.trim());
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            result.push(current.trim());
+            return result;
+        }
+
+        function handleCSVUpload(event) {
+            var file = event.target.files[0];
+            if (!file) return;
+            
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var text = e.target.result;
+                var lines = text.split('\n').filter(function(line) { return line.trim(); });
+                
+                if (lines.length < 2) {
+                    showToast('CSV muss mindestens Header und eine Datenzeile enthalten', 'error');
+                    return;
+                }
+                
+                var headers = parseCSVLine(lines[0]);
+                var data = [];
+                
+                for (var i = 1; i < lines.length; i++) {
+                    var values = parseCSVLine(lines[i]);
+                    var row = {};
+                    headers.forEach(function(header, index) {
+                        row[header] = values[index] || '';
+                    });
+                    data.push(row);
+                }
+                
+                state.csvData = data;
+                showMappingDialog(headers);
+            };
+            
+            reader.readAsText(file);
+        }
+
+        function showMappingDialog(csvHeaders) {
+            var dbFields = ['begriff', 'reim', 'wortart', 'synonyme', 'bedeutung', 'beispielsatz', 'bemerkung'];
+            var dbLabels = {
+                begriff: 'Begriff (Pflichtfeld)',
+                reim: 'Reim',
+                wortart: 'Wortart',
+                synonyme: 'Synonyme',
+                bedeutung: 'Bedeutung',
+                beispielsatz: 'Beispielsatz',
+                bemerkung: 'Bemerkung'
+            };
+            
+            var content = '<div class="info-box"><strong>ℹ️ CSV-Import Zuordnung</strong><br>Ordne die CSV-Spalten den Datenbank-Feldern zu. Das Feld "Begriff" ist Pflicht.</div>';
+            
+            dbFields.forEach(function(field) {
+                content += '<div class="mapping-grid"><div><label style="font-weight: 600; color: #1f2937;">' + dbLabels[field] + '</label></div>';
+                content += '<div class="mapping-arrow">→</div>';
+                content += '<select class="input" id="map-' + field + '"><option value="">-- Nicht zuordnen --</option>';
+                csvHeaders.forEach(function(h) {
+                    content += '<option value="' + h + '">' + h + '</option>';
+                });
+                content += '</select></div>';
+            });
+            
+            content += '<div style="margin-top: 20px; display: flex; gap: 10px;">';
+            content += '<button class="btn btn-success" onclick="executeImport()" style="flex: 1;">📥 ' + state.csvData.length + ' Einträge importieren</button>';
+            content += '<button class="btn btn-secondary" onclick="closeModal()">Abbrechen</button>';
+            content += '</div>';
+            
+            showModal('CSV-Import: Spalten zuordnen', content);
+        }
+
+        function executeImport() {
+            var dbFields = ['begriff', 'reim', 'wortart', 'synonyme', 'bedeutung', 'beispielsatz', 'bemerkung'];
+            var mapping = {};
+            
+            dbFields.forEach(function(field) {
+                var select = document.getElementById('map-' + field);
+                if (select && select.value) {
+                    mapping[field] = select.value;
+                }
+            });
+            
+            if (!mapping.begriff) {
+                showToast('Das Feld "Begriff" muss zugeordnet werden!', 'error');
+                return;
+            }
+            
+            closeModal();
+            
+            var content = document.getElementById('content');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 20px;">Importiere Daten...</p><div class="progress-bar" style="width: 400px; margin: 20px auto;"><div class="progress-fill" id="import-progress" style="width: 0%"></div></div><p id="import-status">0 / ' + state.csvData.length + '</p></div>';
+            
+            var imported = 0;
+            var errors = 0;
+            var promises = [];
+            
+            state.csvData.forEach(function(row, i) {
+                var data = {};
+                
+                dbFields.forEach(function(field) {
+                    if (mapping[field] && row[mapping[field]]) {
+                        data[field] = sanitizeInput(row[mapping[field]]);
+                    } else {
+                        data[field] = null;
+                    }
+                });
+                
+                if (!data.begriff || data.begriff.length < 2) {
+                    errors++;
+                    return;
+                }
+                
+                var promise = supabaseCall('woerter', {
+                    method: 'POST',
+                    body: JSON.stringify(data),
+                    headers: { 'Prefer': 'return=representation' }
+                }).then(function() {
+                    imported++;
+                    var progress = ((i + 1) / state.csvData.length) * 100;
+                    var progressEl = document.getElementById('import-progress');
+                    var statusEl = document.getElementById('import-status');
+                    if (progressEl) progressEl.style.width = progress + '%';
+                    if (statusEl) statusEl.textContent = (i + 1) + ' / ' + state.csvData.length;
+                }).catch(function(error) {
+                    console.error('Import error:', error);
+                    errors++;
+                });
+                
+                promises.push(promise);
+            });
+            
+            Promise.all(promises).then(function() {
+                return loadData();
+            }).then(function() {
+                showToast('✓ Import abgeschlossen: ' + imported + ' erfolgreich, ' + errors + ' Fehler', imported > 0 ? 'success' : 'error');
+            });
+        }
+
+        function findDuplicates() {
+            var seen = new Map();
+            var duplicates = [];
+            
+            state.woerter.forEach(function(w, index) {
+                var key = w.begriff ? w.begriff.toLowerCase().trim() : '';
+                if (!key) return;
+                
+                if (seen.has(key)) {
+                    seen.get(key).push(index);
+                } else {
+                    seen.set(key, [index]);
+                }
+            });
+            
+            seen.forEach(function(indices, key) {
+                if (indices.length > 1) {
+                    duplicates.push({
+                        begriff: key,
+                        indices: indices,
+                        count: indices.length
+                    });
+                }
+            });
+            
+            return duplicates;
+        }
+
+        function showDuplicates() {
+            var duplicates = findDuplicates();
+            
+            if (duplicates.length === 0) {
+                showToast('✓ Keine Duplikate gefunden!', 'success');
+                return;
+            }
+            
+            var totalDuplicateEntries = duplicates.reduce(function(sum, d) { return sum + d.count; }, 0);
+            var duplicateIds = [];
+            
+            duplicates.forEach(function(d) {
+                var entries = d.indices.map(function(i) { return state.woerter[i]; });
+                for (var i = 1; i < entries.length; i++) {
+                    duplicateIds.push(entries[i].id);
+                }
+            });
+            
+            var content = '<div class="warning-box"><strong>⚠️ ' + duplicates.length + ' doppelte Begriffe gefunden</strong><br>Insgesamt ' + totalDuplicateEntries + ' Einträge betroffen<br><strong>' + duplicateIds.length + ' Duplikate</strong> können gelöscht werden</div>';
+            content += '<div style="margin: 20px 0; padding: 15px; background: #dbeafe; border-radius: 8px;"><strong>💡 Was passiert beim Löschen?</strong><br>• Von jedem doppelten Begriff wird der erste Eintrag behalten<br>• Alle weiteren Duplikate (' + duplicateIds.length + ' Einträge) werden gelöscht</div>';
+            content += '<div style="display: flex; gap: 10px; margin-bottom: 20px;"><button class="btn btn-danger" onclick="deleteAllDuplicates()" style="flex: 1;">🗑️ ALLE ' + duplicateIds.length + ' Duplikate löschen</button><button class="btn btn-secondary" onclick="closeModal()">Abbrechen</button></div>';
+            
+            content += '<div style="max-height: 400px; overflow-y: auto; border-top: 2px solid #e5e7eb; padding-top: 15px;"><h3 style="margin-bottom: 15px;">Details:</h3>';
+            duplicates.forEach(function(d) {
+                var entries = d.indices.map(function(i) { return state.woerter[i]; });
+                content += '<div class="card"><h3>' + entries[0].begriff + ' (' + d.count + 'x)</h3>';
+                entries.forEach(function(e, idx) {
+                    content += '<div style="padding: 10px; background: ' + (idx === 0 ? '#d1fae5' : (idx % 2 === 0 ? '#f9fafb' : 'white')) + '; margin: 5px 0; border-radius: 4px;' + (idx === 0 ? ' border: 2px solid #10b981;' : '') + '">';
+                    content += '<div style="display: flex; justify-content: space-between; align-items: start;"><div style="flex: 1;">';
+                    content += (idx === 0 ? '<strong style="color: #10b981;">✓ WIRD BEHALTEN</strong><br>' : '<strong style="color: #ef4444;">✗ WIRD GELÖSCHT</strong><br>');
+                    if (e.synonyme) content += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + e.synonyme + '</div>';
+                    if (e.bedeutung) content += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + e.bedeutung + '</div>';
+                    content += '</div>';
+                    if (idx > 0) content += '<button class="btn btn-danger" onclick="deleteSingleEntry(' + e.id + ')" style="padding: 6px 12px; font-size: 13px;">Einzeln löschen</button>';
+                    content += '</div></div>';
+                });
+                content += '</div>';
+            });
+            content += '</div>';
+            
+            showModal('Doppelte Einträge (' + duplicates.length + ' Begriffe, ' + duplicateIds.length + ' zu löschen)', content);
+            window.duplicateIdsToDelete = duplicateIds;
+        }
+
+        function deleteAllDuplicates() {
+            var ids = window.duplicateIdsToDelete;
+            if (!ids || ids.length === 0) {
+                showToast('Keine Duplikate zum Löschen gefunden', 'warning');
+                closeModal();
+                return;
+            }
+            
+            if (!confirm('Wirklich ALLE ' + ids.length + ' Duplikate löschen?\n\nDies kann nicht rückgängig gemacht werden!')) {
+                window.duplicateIdsToDelete = null;
+                closeModal();
+                return;
+            }
+            
+            closeModal();
+            var idsToDelete = ids.slice();
+            window.duplicateIdsToDelete = null;
+            
+            var content = document.getElementById('content');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 20px;">Lösche ' + idsToDelete.length + ' Duplikate...</p><div class="progress-bar" style="width: 400px; margin: 20px auto;"><div class="progress-fill" id="delete-progress" style="width: 0%"></div></div><p id="delete-status">0 / ' + idsToDelete.length + '</p></div>';
+            
+            var deleted = 0;
+            var errors = 0;
+            var promises = [];
+            
+            idsToDelete.forEach(function(id, i) {
+                var promise = supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() {
+                    deleted++;
+                    var progress = ((i + 1) / idsToDelete.length) * 100;
+                    var progressEl = document.getElementById('delete-progress');
+                    var statusEl = document.getElementById('delete-status');
+                    if (progressEl) progressEl.style.width = progress + '%';
+                    if (statusEl) statusEl.textContent = (i + 1) + ' / ' + idsToDelete.length;
+                }).catch(function(error) {
+                    console.error('Delete error:', error);
+                    errors++;
+                });
+                promises.push(promise);
+            });
+            
+            Promise.all(promises).then(function() {
+                return loadData();
+            }).then(function() {
+                showToast('✓ ' + deleted + ' Duplikate gelöscht' + (errors > 0 ? ', ' + errors + ' Fehler' : ''), deleted > 0 ? 'success' : 'error');
+            });
+        }
+
+        function deleteSingleEntry(id) {
+            if (!confirm('Diesen Eintrag wirklich löschen?')) return;
+            
+            supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() {
+                return loadData();
+            }).then(function() {
+                showToast('Eintrag gelöscht', 'success');
+                closeModal();
+                setTimeout(showDuplicates, 100);
+            }).catch(function(error) {
+                showToast('Fehler: ' + error.message, 'error');
+            });
+        }
+
+        function updateCell(id, field, value) {
+            var data = {};
+            data[field] = value || null;
+            supabaseCall('woerter?id=eq.' + id, {
+                method: 'PATCH',
+                body: JSON.stringify(data)
+            }).catch(function(error) {
+                showToast('Fehler beim Speichern: ' + error.message, 'error');
+            });
+        }
+
+        function deleteRow(id) {
+            if (!confirm('Eintrag wirklich löschen?')) return;
+            
+            supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() {
+                return loadData();
+            }).then(function() {
+                showToast('Eintrag gelöscht', 'success');
+            }).catch(function(error) {
+                showToast('Fehler: ' + error.message, 'error');
+            });
+        }
+
+        function toggleRowSelection(id) {
+            if (state.selectedRows.has(id)) {
+                state.selectedRows.delete(id);
+            } else {
+                state.selectedRows.add(id);
+            }
+            updateSelectionUI();
+        }
+
+        function toggleAllRows() {
+            var filtered = filterWoerter();
+            if (state.selectedRows.size === filtered.length) {
+                state.selectedRows.clear();
+            } else {
+                filtered.forEach(function(w) { state.selectedRows.add(w.id); });
+            }
+            updateSelectionUI();
+        }
+
+        function updateSelectionUI() {
+            document.querySelectorAll('.row-checkbox').forEach(function(cb) {
+                cb.checked = state.selectedRows.has(parseInt(cb.dataset.id));
+            });
+            
+            var selectAll = document.getElementById('select-all');
+            if (selectAll) {
+                var filtered = filterWoerter();
+                selectAll.checked = filtered.length > 0 && state.selectedRows.size === filtered.length;
+            }
+            
+            var toolbar = document.getElementById('selection-toolbar');
+            if (toolbar) {
+                toolbar.innerHTML = state.selectedRows.size > 0 
+                    ? '<span style="color: #6b7280;">' + state.selectedRows.size + ' ausgewählt</span><button class="btn btn-danger" onclick="deleteSelectedRows()">Ausgewählte löschen</button>'
+                    : '';
+            }
+        }
+
+        function deleteSelectedRows() {
+            if (state.selectedRows.size === 0) {
+                showToast('Keine Zeilen ausgewählt', 'warning');
+                return;
+            }
+            
+            if (!confirm(state.selectedRows.size + ' Einträge wirklich löschen?')) return;
+            
+            var content = document.getElementById('content');
+            content.innerHTML = '<div class="loading"><div class="spinner"></div><p style="margin-top: 20px;">Lösche Einträge...</p><div class="progress-bar" style="width: 400px; margin: 20px auto;"><div class="progress-fill" id="delete-progress" style="width: 0%"></div></div><p id="delete-status">0 / ' + state.selectedRows.size + '</p></div>';
+            
+            var ids = Array.from(state.selectedRows);
+            var deleted = 0;
+            var promises = [];
+            
+            ids.forEach(function(id, i) {
+                var promise = supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() {
+                    deleted++;
+                    var progress = ((i + 1) / ids.length) * 100;
+                    var progressEl = document.getElementById('delete-progress');
+                    var statusEl = document.getElementById('delete-status');
+                    if (progressEl) progressEl.style.width = progress + '%';
+                    if (statusEl) statusEl.textContent = (i + 1) + ' / ' + ids.length;
+                }).catch(function(error) {
+                    console.error('Delete error:', error);
+                });
+                promises.push(promise);
+            });
+            
+            Promise.all(promises).then(function() {
+                state.selectedRows.clear();
+                return loadData();
+            }).then(function() {
+                showToast('✓ ' + deleted + ' Einträge gelöscht', 'success');
+            });
+        }
+
+        function renderAdminTable() {
+            var filtered = filterWoerter();
+            var duplicates = findDuplicates();
+            var duplicateIds = new Set();
+            duplicates.forEach(function(d) {
+                d.indices.forEach(function(i) {
+                    if (state.woerter[i]) duplicateIds.add(state.woerter[i].id);
+                });
+            });
+            
+            var html = '<div style="margin: 20px 0;"><div class="toolbar"><h2>Alle Einträge bearbeiten (' + state.woerter.length + ')</h2>';
+            html += '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
+            html += '<button class="btn btn-success" onclick="document.getElementById(\'csv-upload\').click()">📤 CSV importieren</button>';
+            html += '<button class="btn" onclick="exportAllCSV()">📥 Alle exportieren (' + state.woerter.length + ')</button>';
+            html += '<button class="btn btn-secondary" onclick="showDuplicates()">🔍 Duplikate finden</button>';
+            html += '</div></div>';
+            html += '<input type="file" id="csv-upload" accept=".csv" style="display: none;" onchange="handleCSVUpload(event)">';
+            html += '</div>';
+            
+            html += '<div class="info-box"><strong>💡 Tipps:</strong><br>• Klicke in eine Zelle zum Bearbeiten (Änderungen werden automatisch gespeichert)<br>• Wähle Zeilen mit Checkboxen aus, um mehrere auf einmal zu löschen<br>• Duplikate werden gelb markiert</div>';
+            
+            html += '<div class="search-box"><input type="text" id="admin-search" class="input" placeholder="Einträge durchsuchen..." value="' + state.filter.mundart + '">';
+            html += '<div id="selection-toolbar" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;"></div></div>';
+            
+            html += '<div class="admin-table-container"><table class="admin-table"><thead><tr>';
+            html += '<th style="width: 40px;"><input type="checkbox" id="select-all" class="checkbox" onclick="toggleAllRows()"></th>';
+            html += '<th style="width: 40px;">✗</th>';
+            html += '<th style="min-width: 150px;">Begriff</th>';
+            html += '<th style="min-width: 120px;">Reim</th>';
+            html += '<th style="min-width: 120px;">Wortart</th>';
+            html += '<th style="min-width: 200px;">Synonyme</th>';
+            html += '<th style="min-width: 250px;">Bedeutung</th>';
+            html += '<th style="min-width: 250px;">Beispielsatz</th>';
+            html += '<th style="min-width: 200px;">Bemerkung</th>';
+            html += '</tr></thead><tbody>';
+            
+            filtered.forEach(function(w, i) {
+                var rowStyle = duplicateIds.has(w.id) ? 'background: #fef3c7;' : (i % 2 === 0 ? 'background: #f9fafb;' : '');
+                html += '<tr style="' + rowStyle + '">';
+                html += '<td style="text-align: center;"><input type="checkbox" class="checkbox row-checkbox" data-id="' + w.id + '" onclick="toggleRowSelection(' + w.id + ')"></td>';
+                html += '<td style="text-align: center;"><button class="delete-row-btn" onclick="deleteRow(' + w.id + ')">✗</button></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="begriff" onblur="updateCell(' + w.id + ', \'begriff\', this.textContent.trim())" style="font-weight: 600;">' + (w.begriff || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="reim" onblur="updateCell(' + w.id + ', \'reim\', this.textContent.trim())">' + (w.reim || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="wortart" onblur="updateCell(' + w.id + ', \'wortart\', this.textContent.trim())">' + (w.wortart || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="synonyme" onblur="updateCell(' + w.id + ', \'synonyme\', this.textContent.trim())">' + (w.synonyme || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="bedeutung" onblur="updateCell(' + w.id + ', \'bedeutung\', this.textContent.trim())">' + (w.bedeutung || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="beispielsatz" onblur="updateCell(' + w.id + ', \'beispielsatz\', this.textContent.trim())">' + (w.beispielsatz || '') + '</div></td>';
+                html += '<td><div contenteditable="true" class="editable-cell" data-id="' + w.id + '" data-field="bemerkung" onblur="updateCell(' + w.id + ', \'bemerkung\', this.textContent.trim())">' + (w.bemerkung || '') + '</div></td>';
+                html += '</tr>';
+            });
+            
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        function renderAdmin() {
+            var pendingCount = state.pendingChanges.length;
+            
+            var tabs = '<div class="tabs">';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'freigaben' ? ' active' : '') + '" onclick="changeAdminTab(\'freigaben\')">Freigaben' + (pendingCount > 0 ? '<span class="pending-badge">' + pendingCount + '</span>' : '') + '</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Alle Einträge (' + state.woerter.length + ')</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
+            tabs += '</div>';
+
+            if (state.adminTab === 'freigaben') {
+                var html = tabs + '<div style="margin: 20px 0;"><h2>Ausstehende Änderungen (' + pendingCount + ')</h2>';
+                if (pendingCount > 0) {
+                    html += '<button class="btn" onclick="approveAllChanges()" style="margin-top: 10px;">✓ Alle freigeben</button>';
+                }
+                html += '</div>';
+                
+                if (pendingCount === 0) {
+                    html += '<div class="empty">Keine ausstehenden Änderungen</div>';
+                } else {
+                    state.pendingChanges.forEach(function(c) {
+                        html += '<div class="card"><div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">';
+                        html += '<div><h3>' + c.begriff + '</h3><span class="pending-badge" style="margin-left: 0;">' + (c.action === 'create' ? 'Neuer Eintrag' : 'Bearbeitung') + '</span></div>';
+                        html += '<div style="display: flex; gap: 8px;">';
+                        html += '<button class="btn" style="padding: 8px 16px;" onclick="approveChange(' + c.id + ')">✓ Freigeben</button>';
+                        html += '<button class="btn btn-danger" style="padding: 8px 16px;" onclick="rejectChange(' + c.id + ')">✗ Ablehnen</button>';
+                        html += '</div></div>';
+                        if (c.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + c.reim + '</div>';
+                        if (c.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + c.wortart + '</div>';
+                        if (c.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + c.synonyme + '</div>';
+                        if (c.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + c.bedeutung + '</div>';
+                        if (c.beispielsatz) html += '<div class="card-row"><span class="card-label">Beispiel:</span> <em>"' + c.beispielsatz + '"</em></div>';
+                        if (c.bemerkung) html += '<div class="card-row"><span class="card-label">Bemerkung:</span> ' + c.bemerkung + '</div>';
+                        html += '<div class="card-row" style="font-size: 13px; color: #9ca3af; margin-top: 10px;">Eingereicht: ' + new Date(c.created_at).toLocaleString('de-CH') + '</div>';
+                        html += '</div>';
+                    });
+                }
+                return html;
+            } else if (state.adminTab === 'tabelle') {
+                return tabs + renderAdminTable();
+            } else if (state.adminTab === 'export') {
+                return tabs + '<div class="search-box" style="max-width: 600px; margin: 40px auto;"><h2 style="margin-bottom: 20px;">Daten exportieren</h2><p style="color: #666; margin-bottom: 20px;">Exportiere die gesamte Datenbank als CSV-Datei.</p><button class="btn btn-success" onclick="exportAllCSV()" style="width: 100%; padding: 15px; font-size: 16px;">📥 ALLE ' + state.woerter.length + ' Einträge exportieren</button></div>';
+            }
+        }
+
+        function changeAdminTab(tab) {
+            state.adminTab = tab;
+            render();
+        }
+
+        function approveChange(id) {
+            var change = state.pendingChanges.find(function(c) { return c.id === id; });
+            if (!change) return;
+            
+            var promise;
+            if (change.action === 'create') {
+                promise = supabaseCall('woerter', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        begriff: change.begriff,
+                        reim: change.reim,
+                        wortart: change.wortart,
+                        synonyme: change.synonyme,
+                        bedeutung: change.bedeutung,
+                        beispielsatz: change.beispielsatz,
+                        bemerkung: change.bemerkung
+                    }),
+                    headers: { 'Prefer': 'return=representation' }
+                });
+            } else if (change.action === 'edit') {
+                promise = supabaseCall('woerter?id=eq.' + change.wort_id, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        begriff: change.begriff,
+                        reim: change.reim,
+                        wortart: change.wortart,
+                        synonyme: change.synonyme,
+                        bedeutung: change.bedeutung,
+                        beispielsatz: change.beispielsatz,
+                        bemerkung: change.bemerkung
+                    })
+                });
+            }
+            
+            promise.then(function() {
+                return supabaseCall('pending_changes?id=eq.' + id, { method: 'DELETE' });
+            }).then(function() {
+                showToast('Änderung freigegeben! ✓', 'success');
+                return loadData();
+            }).catch(function(error) {
+                showToast('Fehler: ' + error.message, 'error');
+            });
+        }
+
+        function rejectChange(id) {
+            if (!confirm('Diese Änderung wirklich ablehnen?')) return;
+            
+            supabaseCall('pending_changes?id=eq.' + id, { method: 'DELETE' }).then(function() {
+                showToast('Änderung abgelehnt.', 'warning');
+                return loadData();
+            }).catch(function(error) {
+                showToast('Fehler: ' + error.message, 'error');
+            });
+        }
+
+        function approveAllChanges() {
+            if (!confirm(state.pendingChanges.length + ' Änderungen freigeben?')) return;
+            
+            var promises = [];
+            state.pendingChanges.forEach(function(change) {
+                var promise;
+                if (change.action === 'create') {
+                    promise = supabaseCall('woerter', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            begriff: change.begriff,
+                            reim: change.reim,
+                            wortart: change.wortart,
+                            synonyme: change.synonyme,
+                            bedeutung: change.bedeutung,
+                            beispielsatz: change.beispielsatz,
+                            bemerkung: change.bemerkung
+                        }),
+                        headers: { 'Prefer': 'return=representation' }
+                    });
+                } else if (change.action === 'edit') {
+                    promise = supabaseCall('woerter?id=eq.' + change.wort_id, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            begriff: change.begriff,
+                            reim: change.reim,
+                            wortart: change.wortart,
+                            synonyme: change.synonyme,
+                            bedeutung: change.bedeutung,
+                            beispielsatz: change.beispielsatz,
+                            bemerkung: change.bemerkung
+                        })
+                    });
+                }
+                promises.push(promise.then(function() {
+                    return supabaseCall('pending_changes?id=eq.' + change.id, { method: 'DELETE' });
+                }));
+            });
+            
+            Promise.all(promises).then(function() {
+                showToast('Alle Änderungen freigegeben! ✓', 'success');
+                return loadData();
+            }).catch(function(error) {
+                showToast('Fehler: ' + error.message, 'error');
+            });
+        }
+
+        function renderInfo() {
+            return '<div class="info-content"><h2>Über dieses Wörterbuch</h2><p>Dieses Mundart-Wörterbuch sammelt Dialektausdrücke aus der Zentralschweiz und angrenzenden Regionen – vor allem aus Luzern, Aargau, Solothurn und Bern.</p><h2>Mitmachen</h2><p>Du kennst einen Begriff, der hier fehlt? Unter "Mithelfen" kannst du neue Wörter vorschlagen.</p><h2>Kontakt</h2><p>Fragen oder Feedback? Schreib mir: <strong>info [at] ueliblum [punkt] ch</strong></p></div>';
+        }
+
+        function renderLogin() {
+            return '<div class="login-box"><h2>Admin-Login</h2><div class="warning-box" style="margin-bottom: 20px; font-size: 14px;"><strong>⚠️ Hinweis:</strong><br>Dies ist eine Demo-Authentifizierung.</div><form onsubmit="handleLogin(event); return false;"><input type="password" name="password" class="input" placeholder="Passwort" required><button type="submit" class="btn" style="width: 100%; margin-top: 15px;">Einloggen</button></form></div>';
+        }
+
+        function attachEventListeners() {
+            var searchMundart = document.getElementById('search-mundart');
+            var searchDeutsch = document.getElementById('search-deutsch');
+            var searchWortart = document.getElementById('search-wortart');
+            var searchReim = document.getElementById('search-reim');
+            var toggleUnreine = document.getElementById('toggle-unreine');
+            var adminSearch = document.getElementById('admin-search');
+            
+            if (searchMundart) {
+                searchMundart.addEventListener('input', function(e) {
+                    state.filter.mundart = e.target.value;
+                    state.currentPage = 1;
+                    renderContent();
+                });
+            }
+            
+            if (searchDeutsch) {
+                searchDeutsch.addEventListener('input', function(e) {
+                    state.filter.deutsch = e.target.value;
+                    state.currentPage = 1;
+                    renderContent();
+                });
+            }
+            
+            if (searchWortart) {
+                searchWortart.addEventListener('change', function(e) {
+                    state.filter.wortart = e.target.value;
+                    state.currentPage = 1;
+                    renderContent();
+                });
+            }
+            
+            if (searchReim) {
+                searchReim.addEventListener('input', function(e) {
+                    state.filter.reim = e.target.value;
+                    renderContent();
+                });
+            }
+            
+            if (toggleUnreine) {
+                toggleUnreine.addEventListener('change', function(e) {
+                    state.showUnreineReime = e.target.checked;
+                    renderContent();
+                });
+            }
+            
+            if (adminSearch) {
+                adminSearch.addEventListener('input', function(e) {
+                    state.filter.mundart = e.target.value;
+                    renderContent();
+                });
+            }
+        }
+
+        function renderContent() {
+            var content = document.getElementById('content');
+            var views = {
+                woerterbuch: renderWoerterbuch,
+                reimlexikon: renderReimlexikon,
+                bearbeiten: renderBearbeiten,
+                info: renderInfo,
+                login: renderLogin,
+                admin: renderAdmin
+            };
+            
+            var activeElement = document.activeElement;
+            var activeId = activeElement ? activeElement.id : null;
+            var cursorPosition = activeElement && activeElement.selectionStart ? activeElement.selectionStart : null;
+            
+            content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">Seite nicht gefunden</div>'; })();
+            
+            attachEventListeners();
+            
+            if (activeId) {
+                var element = document.getElementById(activeId);
+                if (element) {
+                    element.focus();
+                    if (cursorPosition !== null && element.setSelectionRange) {
+                        element.setSelectionRange(cursorPosition, cursorPosition);
+                    }
+                }
+            }
+        }
+
+        function render() {
+            var content = document.getElementById('content');
+            var views = {
+                woerterbuch: renderWoerterbuch,
+                reimlexikon: renderReimlexikon,
+                bearbeiten: renderBearbeiten,
+                info: renderInfo,
+                login: renderLogin,
+                admin: renderAdmin
+            };
+            
+            content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">Seite nicht gefunden</div>'; })();
+            attachEventListeners();
+        }
+
+        function initNav() {
+            var nav = document.getElementById('mainNav');
+            var views = [
+                { id: 'woerterbuch', label: 'Wörterbuch' },
+                { id: 'reimlexikon', label: 'Reimlexikon' },
+                { id: 'bearbeiten', label: 'Mithelfen' },
+                { id: 'info', label: 'Info & Kontakt' },
+                { id: 'admin', label: 'Admin' }
+            ];
+            nav.innerHTML = views.map(function(v, i) {
+                return '<button class="nav-btn' + (i === 0 ? ' active' : '') + '" onclick="changeView(\'' + v.id + '\')">' + v.label + '</button>';
+            }).join('');
+        }
+
+        function changeView(view) {
+            if (view === 'admin' && !state.isAdmin) view = 'login';
+            state.currentView = view;
+            state.currentPage = 1;
+            
+            if (view === 'bearbeiten') {
+                state.isNewEntry = true;
+                state.currentEditIndex = 0;
+            }
+            
+            document.querySelectorAll('.nav-btn').forEach(function(btn) {
+                var match = btn.getAttribute('onclick').match(/'(.+?)'/);
+                var btnView = match ? match[1] : '';
+                btn.classList.toggle('active', btnView === view || (view === 'login' && btnView === 'admin'));
+            });
+            render();
+        }
+
+        function handleLogin(event) {
+            event.preventDefault();
+            var password = event.target.password.value;
+            
+            if (password === CONFIG.ADMIN_PASSWORD) {
+                state.isAdmin = true;
+                changeView('admin');
+                showToast('Login erfolgreich! ✓', 'success');
+            } else {
+                showToast('Falsches Passwort!', 'error');
+            }
+        }
+
+        function init() {
+            initNav();
+            loadData();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    </script>
+</body>
+</html>
