@@ -1127,48 +1127,78 @@
             var adminSearch = document.getElementById('admin-search');
             
             if (searchMundart) {
-                searchMundart.addEventListener('input', debounce(function(e) {
+                searchMundart.addEventListener('input', function(e) {
                     state.filter.mundart = e.target.value;
                     state.currentPage = 1;
-                    render();
-                }, CONFIG.DEBOUNCE_DELAY));
+                    renderContent();
+                });
             }
             
             if (searchDeutsch) {
-                searchDeutsch.addEventListener('input', debounce(function(e) {
+                searchDeutsch.addEventListener('input', function(e) {
                     state.filter.deutsch = e.target.value;
                     state.currentPage = 1;
-                    render();
-                }, CONFIG.DEBOUNCE_DELAY));
+                    renderContent();
+                });
             }
             
             if (searchWortart) {
                 searchWortart.addEventListener('change', function(e) {
                     state.filter.wortart = e.target.value;
                     state.currentPage = 1;
-                    render();
+                    renderContent();
                 });
             }
             
             if (searchReim) {
-                searchReim.addEventListener('input', debounce(function(e) {
+                searchReim.addEventListener('input', function(e) {
                     state.filter.reim = e.target.value;
-                    render();
-                }, CONFIG.DEBOUNCE_DELAY));
+                    renderContent();
+                });
             }
             
             if (toggleUnreine) {
                 toggleUnreine.addEventListener('change', function(e) {
                     state.showUnreineReime = e.target.checked;
-                    render();
+                    renderContent();
                 });
             }
             
             if (adminSearch) {
-                adminSearch.addEventListener('input', debounce(function(e) {
+                adminSearch.addEventListener('input', function(e) {
                     state.filter.mundart = e.target.value;
-                    render();
-                }, CONFIG.DEBOUNCE_DELAY));
+                    renderContent();
+                });
+            }
+        }
+
+        function renderContent() {
+            var content = document.getElementById('content');
+            var views = {
+                woerterbuch: renderWoerterbuch,
+                reimlexikon: renderReimlexikon,
+                bearbeiten: renderBearbeiten,
+                info: renderInfo,
+                login: renderLogin,
+                admin: renderAdmin
+            };
+            
+            var activeElement = document.activeElement;
+            var activeId = activeElement ? activeElement.id : null;
+            var cursorPosition = activeElement && activeElement.selectionStart ? activeElement.selectionStart : null;
+            
+            content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">Seite nicht gefunden</div>'; })();
+            
+            attachEventListeners();
+            
+            if (activeId) {
+                var element = document.getElementById(activeId);
+                if (element) {
+                    element.focus();
+                    if (cursorPosition !== null && element.setSelectionRange) {
+                        element.setSelectionRange(cursorPosition, cursorPosition);
+                    }
+                }
             }
         }
 
