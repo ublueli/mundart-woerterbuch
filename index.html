@@ -21,7 +21,7 @@
         .input { width: 100%; padding: 12px 15px; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 15px; transition: border 0.2s; }
         .input:focus { outline: none; border-color: #2563eb; }
         select.input { cursor: pointer; }
-        textarea.input { min-height: 100px; font-family: inherit; resize: vertical; }
+        textarea.input { min-height: 120px; font-family: inherit; resize: vertical; max-height: 400px; }
         .btn { padding: 12px 24px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; transition: background 0.2s; }
         .btn:hover { background: #1d4ed8; }
         .btn:disabled { background: #d1d5db; cursor: not-allowed; }
@@ -475,10 +475,10 @@
             html += '<input type="text" name="begriff" class="input" placeholder="Mundartbegriff * (z.B. aabändle)" value="' + (wort.begriff || '') + '"' + (!state.isNewEntry ? ' readonly style="background: #f3f4f6;"' : '') + ' required>';
             html += '<input type="text" name="reim" class="input" placeholder="Reim (z.B. ändle)" value="' + (wort.reim || '') + '">';
             html += '<input type="text" name="wortart" class="input" placeholder="Wortart (z.B. Verb)" value="' + (wort.wortart || '') + '">';
-            html += '<input type="text" name="synonyme" class="input" placeholder="Synonyme / Deutsche Übersetzung" value="' + (wort.synonyme || '') + '">';
-            html += '<textarea name="bedeutung" class="input" placeholder="Bedeutung">' + (wort.bedeutung || '') + '</textarea>';
-            html += '<textarea name="beispielsatz" class="input" placeholder="Beispielsatz">' + (wort.beispielsatz || '') + '</textarea>';
-            html += '<textarea name="bemerkung" class="input" placeholder="Bemerkungen">' + (wort.bemerkung || '') + '</textarea>';
+            html += '<textarea name="synonyme" class="input" placeholder="Synonyme / Deutsche Übersetzung" rows="2" style="min-height: 60px;">' + (wort.synonyme || '') + '</textarea>';
+            html += '<textarea name="bedeutung" class="input" placeholder="Bedeutung" rows="4">' + (wort.bedeutung || '') + '</textarea>';
+            html += '<textarea name="beispielsatz" class="input" placeholder="Beispielsatz" rows="3">' + (wort.beispielsatz || '') + '</textarea>';
+            html += '<textarea name="bemerkung" class="input" placeholder="Bemerkungen" rows="3">' + (wort.bemerkung || '') + '</textarea>';
             html += '</div><div class="form-actions">';
             html += '<button type="submit" class="btn">' + (state.isNewEntry ? 'Neuen Begriff vorschlagen' : 'Änderungen vorschlagen') + '</button>';
             html += '</div></form></div>';
