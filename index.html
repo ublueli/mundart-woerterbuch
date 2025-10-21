@@ -258,41 +258,42 @@
             
             if (!normalizedSearch) return { rein: rein, unrein: unrein };
             
+            // Finde den Reim des Suchbegriffs
+            var searchWord = state.woerter.find(function(w) {
+                return normalizeForReim(w.begriff) === normalizedSearch;
+            });
+            
+            var searchReim = searchWord ? normalizeForReim(searchWord.reim) : normalizedSearch;
+            
+            // Wenn kein Reim gefunden wurde, verwende die letzten 3-4 Buchstaben des Suchbegriffs
+            if (!searchReim || searchReim === '') {
+                searchReim = normalizedSearch.slice(-3);
+            }
+            
+            // Durchsuche NUR die Reim-Spalte
             state.woerter.forEach(function(wort) {
                 if (!wort.reim || !wort.begriff) return;
                 
                 var normalizedBegriff = normalizeForReim(wort.begriff);
-                if (normalizedBegriff === normalizedSearch) return;
+                if (normalizedBegriff === normalizedSearch) return; // Überspringe den Suchbegriff selbst
                 
                 var normalizedReim = normalizeForReim(wort.reim);
-                var searchWord = state.woerter.find(function(w) {
-                    return normalizeForReim(w.begriff) === normalizedSearch;
-                });
-                var searchReim = searchWord ? searchWord.reim : null;
                 
-                if (searchReim) {
-                    var normalizedSearchReim = normalizeForReim(searchReim);
+                // Reine Reime: Exakte Übereinstimmung der Reim-Endung
+                if (normalizedReim === searchReim) {
+                    rein.push(wort);
+                }
+                // Oder wenn der Reim die Suchendung enthält
+                else if (normalizedReim.endsWith(searchReim) || searchReim.endsWith(normalizedReim)) {
+                    rein.push(wort);
+                }
+                // Unreine Reime: Gleiche Vokalstruktur
+                else if (includeUnreine) {
+                    var vowelPattern1 = getVowelPattern(normalizedReim);
+                    var vowelPattern2 = getVowelPattern(searchReim);
                     
-                    if (normalizedReim === normalizedSearchReim) {
-                        rein.push(wort);
-                    } else if (includeUnreine) {
-                        var vowelPattern1 = getVowelPattern(normalizedReim);
-                        var vowelPattern2 = getVowelPattern(normalizedSearchReim);
-                        
-                        if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
-                            unrein.push(wort);
-                        }
-                    }
-                } else {
-                    if (normalizedReim.includes(normalizedSearch) || normalizedBegriff.includes(normalizedSearch)) {
-                        rein.push(wort);
-                    } else if (includeUnreine) {
-                        var vowelPattern1 = getVowelPattern(normalizedBegriff);
-                        var vowelPattern2 = getVowelPattern(normalizedSearch);
-                        
-                        if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 1) {
-                            unrein.push(wort);
-                        }
+                    if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
+                        unrein.push(wort);
                     }
                 }
             });
