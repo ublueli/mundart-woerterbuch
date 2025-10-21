@@ -69,7 +69,7 @@
         .login-box h2 { margin-bottom: 25px; color: #1f2937; }
         .admin-table-container { 
             width: 100%; 
-            overflow-x: scroll;
+            overflow-x: auto;
             overflow-y: auto;
             -webkit-overflow-scrolling: touch;
             margin-top: 20px; 
@@ -95,9 +95,10 @@
         }
         .admin-table { 
             width: 100%; 
-            min-width: 1400px; 
+            min-width: 100%;
             border-collapse: collapse;
             display: table;
+            table-layout: fixed;
         }
         .admin-table thead { 
             background: #f3f4f6; 
@@ -105,10 +106,10 @@
             top: 0; 
             z-index: 10; 
         }
-        .admin-table th { padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb; font-weight: 600; color: #1f2937; }
-        .admin-table td { padding: 12px; border-bottom: 1px solid #e5e7eb; }
+        .admin-table th { padding: 12px; text-align: left; border-bottom: 2px solid #e5e7eb; font-weight: 600; color: #1f2937; word-wrap: break-word; }
+        .admin-table td { padding: 12px; border-bottom: 1px solid #e5e7eb; word-wrap: break-word; vertical-align: top; }
         .admin-table tr:hover { background: #f9fafb; }
-        .editable-cell { min-width: 100px; cursor: text; border: 1px solid transparent; padding: 4px; border-radius: 4px; }
+        .editable-cell { min-width: 80px; cursor: text; border: 1px solid transparent; padding: 4px; border-radius: 4px; word-wrap: break-word; white-space: pre-wrap; min-height: 30px; }
         .editable-cell:focus { outline: none; border-color: #2563eb; background: white; }
         .editable-cell:hover { border-color: #d1d5db; }
         .delete-row-btn { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
@@ -976,15 +977,15 @@
             html += '<div id="selection-toolbar" style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;"></div></div>';
             
             html += '<div class="admin-table-container"><table class="admin-table"><thead><tr>';
-            html += '<th style="width: 40px;"><input type="checkbox" id="select-all" class="checkbox" onclick="toggleAllRows()"></th>';
+            html += '<th style="width: 40px;">✓</th>';
             html += '<th style="width: 40px;">✗</th>';
-            html += '<th style="min-width: 150px;">Begriff</th>';
-            html += '<th style="min-width: 120px;">Reim</th>';
-            html += '<th style="min-width: 120px;">Wortart</th>';
-            html += '<th style="min-width: 200px;">Synonyme</th>';
-            html += '<th style="min-width: 250px;">Bedeutung</th>';
-            html += '<th style="min-width: 250px;">Beispielsatz</th>';
-            html += '<th style="min-width: 200px;">Bemerkung</th>';
+            html += '<th style="width: 12%;">Begriff</th>';
+            html += '<th style="width: 10%;">Reim</th>';
+            html += '<th style="width: 10%;">Wortart</th>';
+            html += '<th style="width: 15%;">Synonyme</th>';
+            html += '<th style="width: 18%;">Bedeutung</th>';
+            html += '<th style="width: 18%;">Beispielsatz</th>';
+            html += '<th style="width: 12%;">Bemerkung</th>';
             html += '</tr></thead><tbody>';
             
             filtered.forEach(function(w, i) {
