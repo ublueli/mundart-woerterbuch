@@ -568,6 +568,14 @@
             
             var html = '<div class="success-box"><strong>✨ Hilf mit, das Wörterbuch zu erweitern!</strong><br>';
             html += (state.isNewEntry ? 'Füge einen neuen Begriff hinzu.' : 'Durchblättere die Begriffe und ergänze fehlende Informationen.') + ' Alle Änderungen werden geprüft.</div>';
+            
+            if (!state.isNewEntry) {
+                html += '<div class="search-box" style="margin-bottom: 20px;"><div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">';
+                html += '<input type="text" id="search-edit-begriff" class="input" placeholder="Begriff suchen zum Bearbeiten..." style="flex: 1; min-width: 250px;" value="">';
+                html += '<button class="btn" onclick="searchAndJumpToBegriff()">🔍 Suchen & Springen</button>';
+                html += '</div><div id="search-suggestions" style="margin-top: 10px;"></div></div>';
+            }
+            
             html += '<div class="search-box"><div class="toolbar">';
             html += '<h2>' + (state.isNewEntry ? 'Neuer Begriff' : 'Bearbeiten: ' + (wort.begriff || 'Begriff') + ' (' + (state.currentEditIndex + 1) + ' / ' + state.woerter.length + ')') + '</h2>';
             html += '<div style="display: flex; gap: 10px; flex-wrap: wrap;">';
@@ -594,6 +602,54 @@
         function navigateEntry(dir) {
             if (dir < 0 && state.currentEditIndex > 0) state.currentEditIndex--;
             else if (dir > 0 && state.currentEditIndex < state.woerter.length - 1) state.currentEditIndex++;
+            render();
+        }
+
+        function searchAndJumpToBegriff() {
+            var searchInput = document.getElementById('search-edit-begriff');
+            if (!searchInput) return;
+            
+            var searchTerm = searchInput.value.trim().toLowerCase();
+            if (!searchTerm) {
+                showToast('Bitte einen Begriff eingeben', 'warning');
+                return;
+            }
+            
+            var foundIndex = state.woerter.findIndex(function(w) {
+                return w.begriff && w.begriff.toLowerCase() === searchTerm;
+            });
+            
+            if (foundIndex !== -1) {
+                state.currentEditIndex = foundIndex;
+                showToast('✓ Begriff "' + state.woerter[foundIndex].begriff + '" gefunden!', 'success');
+                render();
+            } else {
+                var partialMatches = state.woerter.filter(function(w) {
+                    return w.begriff && w.begriff.toLowerCase().includes(searchTerm);
+                }).slice(0, 10);
+                
+                if (partialMatches.length > 0) {
+                    var suggestionsDiv = document.getElementById('search-suggestions');
+                    if (suggestionsDiv) {
+                        var html = '<div style="background: #fef3c7; padding: 15px; border-radius: 8px; border: 2px solid #f59e0b;">';
+                        html += '<strong>Begriff nicht gefunden.</strong> Meintest du einen dieser Begriffe?<br><br>';
+                        html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+                        partialMatches.forEach(function(w) {
+                            var idx = state.woerter.findIndex(function(item) { return item.id === w.id; });
+                            html += '<button class="btn btn-secondary" onclick="jumpToIndex(' + idx + ')" style="padding: 6px 12px; font-size: 14px;">' + w.begriff + '</button>';
+                        });
+                        html += '</div></div>';
+                        suggestionsDiv.innerHTML = html;
+                    }
+                } else {
+                    showToast('Begriff "' + searchTerm + '" nicht gefunden', 'error');
+                }
+            }
+        }
+        
+        function jumpToIndex(index) {
+            state.currentEditIndex = index;
+            showToast('✓ Zu "' + state.woerter[index].begriff + '" gesprungen', 'success');
             render();
         }
 
@@ -1304,6 +1360,15 @@
                 adminSearch.addEventListener('input', function(e) {
                     state.filter.mundart = e.target.value;
                     renderContent();
+                });
+            }
+            
+            var searchEditBegriff = document.getElementById('search-edit-begriff');
+            if (searchEditBegriff) {
+                searchEditBegriff.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        searchAndJumpToBegriff();
+                    }
                 });
             }
         }
