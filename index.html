@@ -411,6 +411,9 @@
             var filtered = filterWoerter();
             var wortarten = ['alle'].concat(Array.from(new Set(state.woerter.filter(function(w) { return w.wortart; }).map(function(w) { return w.wortart; }))));
             
+            var totalPages = Math.ceil(filtered.length / CONFIG.ITEMS_PER_PAGE);
+            if (state.currentPage > totalPages) state.currentPage = 1;
+            
             var startIndex = (state.currentPage - 1) * CONFIG.ITEMS_PER_PAGE;
             var endIndex = startIndex + CONFIG.ITEMS_PER_PAGE;
             var paginated = filtered.slice(startIndex, endIndex);
@@ -422,13 +425,20 @@
             wortarten.filter(function(w) { return w !== 'alle'; }).forEach(function(w) {
                 html += '<option value="' + w + '"' + (state.filter.wortart === w ? ' selected' : '') + '>' + w + '</option>';
             });
-            html += '</select></div><div style="margin-top: 10px; color: #6b7280; font-size: 14px;">' + filtered.length + ' Einträge gefunden</div></div>';
+            html += '</select></div><div style="margin-top: 10px; color: #6b7280; font-size: 14px;">';
+            html += filtered.length + ' Einträge gefunden';
+            if (totalPages > 1) {
+                html += ' (Seite ' + state.currentPage + ' von ' + totalPages + ')';
+            }
+            html += '</div></div>';
             
             if (paginated.length === 0) {
                 html += '<div class="empty">Keine Einträge gefunden</div>';
             } else {
                 paginated.forEach(function(w) { html += renderCard(w); });
             }
+            
+            html += renderPagination(filtered.length);
             
             return html;
         }
