@@ -373,10 +373,16 @@
             }
             
             if (state.filter.deutsch.trim()) {
-                var term = state.filter.deutsch.toLowerCase();
+                var searchTerm = state.filter.deutsch.trim().toLowerCase();
                 filtered = filtered.filter(function(w) {
-                    return (w.synonyme && w.synonyme.toLowerCase().includes(term)) ||
-                           (w.bedeutung && w.bedeutung.toLowerCase().includes(term));
+                    if (!w.synonyme) return false;
+                    
+                    var synonyme = w.synonyme.toLowerCase();
+                    var words = synonyme.split(/[\s,;\/]+/);
+                    
+                    return words.some(function(word) {
+                        return word.trim() === searchTerm;
+                    });
                 });
             }
             
