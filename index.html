@@ -443,12 +443,17 @@
             var html = '<div class="card"><h3>' + w.begriff + '</h3>';
             if (w.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + w.reim + '</div>';
             if (w.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + w.wortart + '</div>';
-            if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + w.synonyme + '</div>';
-            if (w.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + w.bedeutung + '</div>';
-            if (w.beispielsatz) html += '<div class="card-row"><span class="card-label">Beispiel:</span> <em>"' + w.beispielsatz + '"</em></div>';
-            if (w.bemerkung) html += '<div class="card-row"><span class="card-label">Bemerkung:</span> ' + w.bemerkung + '</div>';
+            if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + formatWithLineBreaks(w.synonyme) + '</div>';
+            if (w.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + formatWithLineBreaks(w.bedeutung) + '</div>';
+            if (w.beispielsatz) html += '<div class="card-row"><span class="card-label">Beispiel:</span> <em>"' + formatWithLineBreaks(w.beispielsatz) + '"</em></div>';
+            if (w.bemerkung) html += '<div class="card-row"><span class="card-label">Bemerkung:</span> ' + formatWithLineBreaks(w.bemerkung) + '</div>';
             html += '</div>';
             return html;
+        }
+        
+        function formatWithLineBreaks(text) {
+            if (!text) return '';
+            return text.replace(/\n/g, '<br>');
         }
 
         function renderWoerterbuch() {
