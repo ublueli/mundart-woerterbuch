@@ -366,9 +366,10 @@
             var filtered = state.woerter;
             
             if (state.filter.mundart.trim()) {
-                var term = state.filter.mundart.toLowerCase();
+                var searchTerm = state.filter.mundart.trim().toLowerCase();
                 filtered = filtered.filter(function(w) {
-                    return w.begriff && w.begriff.toLowerCase().includes(term);
+                    if (!w.begriff) return false;
+                    return w.begriff.toLowerCase() === searchTerm;
                 });
             }
             
