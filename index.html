@@ -299,9 +299,10 @@
                 return normalizeForReim(w.begriff) === normalizedSearch;
             });
             
-            var searchReim = searchWord ? normalizeForReim(searchWord.reim) : '';
+            // Verwende den Reim-Eintrag des Begriffs, falls vorhanden
+            // Ansonsten verwende den eingegebenen Suchbegriff selbst
+            var searchReim = searchWord && searchWord.reim ? normalizeForReim(searchWord.reim) : normalizedSearch;
             
-            // Wenn kein Reim gefunden wurde, abbrechen
             if (!searchReim || searchReim === '') {
                 return { rein: rein, unrein: unrein };
             }
