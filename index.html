@@ -287,6 +287,148 @@
             return text.split('').filter(function(c) { return vowels.includes(c); }).join('');
         }
 
+        /**
+         * Phonetische Normalisierung für unreine Reime
+         * Wendet die definierten Schweizer Mundart-Regeln an
+         */
+        function phoneticNormalize(text) {
+            if (!text) return '';
+            
+            var result = text.toLowerCase().trim();
+            
+            // ========================================
+            // SCHRITT 1: VOKAL-DEHNUNGEN
+            // ========================================
+            // Lange Vokale auf Einzelvokal normalisieren
+            result = result.replace(/aa|ah/g, 'a');
+            result = result.replace(/ee|eh/g, 'e');
+            result = result.replace(/ii|ih/g, 'i');
+            result = result.replace(/oo|oh/g, 'o');
+            result = result.replace(/uu|uh/g, 'u');
+            result = result.replace(/ää|äh/g, 'ä');
+            result = result.replace(/öö|öh/g, 'ö');
+            result = result.replace(/üü|üh/g, 'ü');
+            
+            // ========================================
+            // SCHRITT 2: DIPHTHONGE
+            // ========================================
+            // Normalisiere auf Standardform
+            result = result.replace(/ou/g, 'au');
+            result = result.replace(/äi/g, 'ei');
+            result = result.replace(/ai/g, 'ei');
+            result = result.replace(/öi/g, 'eu');
+            result = result.replace(/äu/g, 'eu');
+            result = result.replace(/oi/g, 'eu');
+            
+            // ========================================
+            // SCHRITT 3: ENDUNGEN (vor Konsonanten!)
+            // ========================================
+            result = result.replace(/eli$/g, 'li');
+            result = result.replace(/ä$/g, 'e');
+            
+            // ========================================
+            // SCHRITT 4: KONSONANTEN-GRUPPEN
+            // ========================================
+            // WICHTIG: Längere Muster zuerst!
+            result = result.replace(/scht/g, '#ST#'); // Platzhalter
+            result = result.replace(/schp/g, '#SP#');
+            result = result.replace(/sch/g, 'sh');
+            result = result.replace(/#ST#/g, 'st');
+            result = result.replace(/#SP#/g, 'sp');
+            
+            // ========================================
+            // SCHRITT 5: DOPPELKONSONANTEN
+            // ========================================
+            result = result.replace(/gg/g, 'g');
+            result = result.replace(/ck/g, 'k');
+            result = result.replace(/ff/g, 'f');
+            result = result.replace(/ll/g, 'l');
+            result = result.replace(/rr/g, 'r');
+            result = result.replace(/ss/g, 's');
+            result = result.replace(/tt/g, 't');
+            result = result.replace(/pp/g, 'p');
+            result = result.replace(/nn/g, 'n');
+            result = result.replace(/mm/g, 'm');
+            
+            // ========================================
+            // SCHRITT 6: EINZELNE KONSONANTEN
+            // ========================================
+            // Normalisiere auf Basisklassen
+            result = result.replace(/ch/g, 'k');
+            result = result.replace(/tz/g, 's');
+            result = result.replace(/ts/g, 's');
+            result = result.replace(/z/g, 's');
+            result = result.replace(/pf/g, 'f');
+            result = result.replace(/v/g, 'f');
+            result = result.replace(/w/g, 'f');
+            result = result.replace(/sh/g, 's'); // Nach sch->sh Ersetzung
+            
+            // Phonetisch ähnliche Konsonanten (VORSICHTIG!)
+            // Diese nur am Wortende, um "bringe" != "ichtet" zu vermeiden
+            // Kommentiert, da zu aggressiv:
+            // result = result.replace(/ng$/g, 'n');
+            // result = result.replace(/nk$/g, 'n');
+            
+            return result;
+        }
+
+        /**
+         * Berechnet die phonetische Ähnlichkeit zwischen zwei Wörtern
+         * @returns {number} Wert zwischen 0 (völlig unterschiedlich) und 1 (identisch)
+         */
+        function phoneticSimilarity(word1, word2) {
+            if (!word1 || !word2) return 0;
+            
+            var norm1 = phoneticNormalize(word1);
+            var norm2 = phoneticNormalize(word2);
+            
+            // Levenshtein-Distanz berechnen
+            var matrix = [];
+            var i, j;
+            
+            for (i = 0; i <= norm1.length; i++) {
+                matrix[i] = [i];
+            }
+            for (j = 0; j <= norm2.length; j++) {
+                matrix[0][j] = j;
+            }
+            
+            for (i = 1; i <= norm1.length; i++) {
+                for (j = 1; j <= norm2.length; j++) {
+                    if (norm1.charAt(i - 1) === norm2.charAt(j - 1)) {
+                        matrix[i][j] = matrix[i - 1][j - 1];
+                    } else {
+                        matrix[i][j] = Math.min(
+                            matrix[i - 1][j - 1] + 1, // Substitution
+                            matrix[i][j - 1] + 1,     // Insertion
+                            matrix[i - 1][j] + 1      // Deletion
+                        );
+                    }
+                }
+            }
+            
+            var distance = matrix[norm1.length][norm2.length];
+            var maxLength = Math.max(norm1.length, norm2.length);
+            
+            if (maxLength === 0) return 1;
+            
+            // Ähnlichkeit = 1 - (Distanz / MaxLänge)
+            return 1 - (distance / maxLength);
+        }
+
+        /**
+         * Prüft ob zwei Wörter phonetisch ähnlich genug sind für unreine Reime
+         */
+        function arePhoneticallySimilar(word1, word2) {
+            var similarity = phoneticSimilarity(word1, word2);
+            
+            // Mindest-Ähnlichkeit von 60% erforderlich
+            // UND Längendifferenz max. 2 Zeichen
+            var lengthDiff = Math.abs(word1.length - word2.length);
+            
+            return similarity >= 0.6 && lengthDiff <= 2;
+        }
+
         function findReimeForBegriff(searchTerm, includeUnreine) {
             var normalizedSearch = normalizeForReim(searchTerm);
             var rein = [];
@@ -307,6 +449,9 @@
                 return { rein: rein, unrein: unrein };
             }
             
+            // Phonetische Normalisierung für unreine Reime
+            var phoneticSearchReim = phoneticNormalize(searchReim);
+            
             // Durchsuche NUR die Reim-Spalte nach EXAKTER Übereinstimmung
             state.woerter.forEach(function(wort) {
                 if (!wort.reim || !wort.begriff) return;
@@ -320,13 +465,23 @@
                 if (normalizedReim === searchReim) {
                     rein.push(wort);
                 }
-                // Unreine Reime: Gleiche Vokalstruktur
+                // Unreine Reime: Phonetische Ähnlichkeit
                 else if (includeUnreine) {
-                    var vowelPattern1 = getVowelPattern(normalizedReim);
-                    var vowelPattern2 = getVowelPattern(searchReim);
+                    var phoneticReim = phoneticNormalize(normalizedReim);
                     
-                    if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
+                    // Methode 1: Exakte phonetische Übereinstimmung
+                    if (phoneticReim === phoneticSearchReim) {
                         unrein.push(wort);
+                    }
+                    // Methode 2: Ähnlichkeitscheck (wenn nicht bereits exakt)
+                    else if (arePhoneticallySimilar(normalizedReim, searchReim)) {
+                        // Zusätzliche Prüfung: Gleiche Vokalstruktur als Sicherheit
+                        var vowelPattern1 = getVowelPattern(normalizedReim);
+                        var vowelPattern2 = getVowelPattern(searchReim);
+                        
+                        if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
+                            unrein.push(wort);
+                        }
                     }
                 }
             });
