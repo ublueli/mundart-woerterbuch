@@ -282,70 +282,6 @@
             return text.toLowerCase().trim();
         }
 
-        function phoneticNormalize(text) {
-            if (!text) return '';
-            var normalized = text.toLowerCase().trim();
-            
-            // A) VOKALE - Dehnungen (längere zuerst!)
-            normalized = normalized.replace(/aa|ah/g, 'a');
-            normalized = normalized.replace(/ee|eh/g, 'e');
-            normalized = normalized.replace(/ii|ih/g, 'i');
-            normalized = normalized.replace(/oo|oh/g, 'o');
-            normalized = normalized.replace(/uu|uh/g, 'u');
-            normalized = normalized.replace(/ää|äh/g, 'ä');
-            normalized = normalized.replace(/öö|öh/g, 'ö');
-            normalized = normalized.replace(/üü|üh/g, 'ü');
-            
-            // B) DIPHTHONGE (längere zuerst!) - GROSSBUCHSTABEN als Marker
-            normalized = normalized.replace(/au|ou/g, 'AU');
-            normalized = normalized.replace(/ei|äi|ai/g, 'EI');
-            normalized = normalized.replace(/eu|öi|äu|oi/g, 'EU');
-            
-            // C) KONSONANTENGRUPPEN (längere zuerst!) - GROSSBUCHSTABEN als Marker
-            // Diese müssen VOR einzelnen Konsonanten ersetzt werden!
-            normalized = normalized.replace(/ng/g, 'NG');  // ng als Einheit
-            normalized = normalized.replace(/nk/g, 'NG');  // nk → ng
-            normalized = normalized.replace(/ck/g, 'KK');  // ck als k
-            normalized = normalized.replace(/gg/g, 'KK');  // gg als k
-            normalized = normalized.replace(/ch/g, 'KK');  // ch als k
-            
-            normalized = normalized.replace(/scht/g, 'ST');
-            normalized = normalized.replace(/schp/g, 'SP');
-            normalized = normalized.replace(/sch/g, 'SCH');
-            normalized = normalized.replace(/sh/g, 'SCH');
-            
-            normalized = normalized.replace(/pf/g, 'F');
-            normalized = normalized.replace(/ff/g, 'F');
-            normalized = normalized.replace(/ll/g, 'L');
-            normalized = normalized.replace(/rr/g, 'R');
-            normalized = normalized.replace(/ss/g, 'S');
-            normalized = normalized.replace(/tz|ts/g, 'TS');
-            
-            // D) EINZELNE KONSONANTEN - Äquivalenz-Klassen
-            // Nasale
-            normalized = normalized.replace(/m/g, 'N');
-            
-            // Plosive
-            normalized = normalized.replace(/b/g, 'P');
-            normalized = normalized.replace(/d/g, 'T');
-            normalized = normalized.replace(/g/g, 'K');
-            normalized = normalized.replace(/k/g, 'K');
-            
-            // Frikative
-            normalized = normalized.replace(/w/g, 'F');
-            normalized = normalized.replace(/v/g, 'F');
-            normalized = normalized.replace(/z/g, 'S');
-            
-            // Liquide
-            normalized = normalized.replace(/l/g, 'R');
-            
-            // E) ENDUNGEN
-            normalized = normalized.replace(/ä$/g, 'e');
-            normalized = normalized.replace(/eli$/g, 'li');
-            
-            return normalized;
-        }
-
         function getVowelPattern(text) {
             var vowels = 'aeiouäöü';
             return text.split('').filter(function(c) { return vowels.includes(c); }).join('');
@@ -358,54 +294,35 @@
             
             if (!normalizedSearch) return { rein: rein, unrein: unrein };
             
-            // Schritt 1: Versuche den Begriff in der Begriffe-Spalte zu finden
+            // Finde den Reim-Eintrag des Suchbegriffs
             var searchWord = state.woerter.find(function(w) {
-                return w.begriff && normalizeForReim(w.begriff) === normalizedSearch;
+                return normalizeForReim(w.begriff) === normalizedSearch;
             });
             
-            var searchReim = '';
+            // Verwende den Reim-Eintrag des Begriffs, falls vorhanden
+            // Ansonsten verwende den eingegebenen Suchbegriff selbst
+            var searchReim = searchWord && searchWord.reim ? normalizeForReim(searchWord.reim) : normalizedSearch;
             
-            if (searchWord && searchWord.reim && searchWord.reim.trim()) {
-                // Schritt 2a: Begriff gefunden - verwende den Reim aus der gleichen Zeile
-                searchReim = normalizeForReim(searchWord.reim);
-            } else {
-                // Schritt 2b: Begriff nicht gefunden - verwende den Suchbegriff als Reim
-                // Das erlaubt direkte Reim-Suche (z.B. "inge" oder "Bänke")
-                searchReim = normalizedSearch;
-            }
-            
-            if (!searchReim) {
+            if (!searchReim || searchReim === '') {
                 return { rein: rein, unrein: unrein };
             }
             
-            // Schritt 3: Durchsuche ALLE Einträge in der Reim-Spalte nach exakter Übereinstimmung
+            // Durchsuche NUR die Reim-Spalte nach EXAKTER Übereinstimmung
             state.woerter.forEach(function(wort) {
                 if (!wort.reim || !wort.begriff) return;
                 
                 var normalizedBegriff = normalizeForReim(wort.begriff);
-                
-                // Überspringe den Suchbegriff selbst (nur wenn es ein Begriff ist)
-                if (normalizedBegriff === normalizedSearch) return;
+                if (normalizedBegriff === normalizedSearch) return; // Überspringe den Suchbegriff selbst
                 
                 var normalizedReim = normalizeForReim(wort.reim);
                 
-                // Reine Reime: Exakte Übereinstimmung der Reim-Spalte
+                // Reine Reime: Exakte Übereinstimmung des Reim-Eintrags
                 if (normalizedReim === searchReim) {
                     rein.push(wort);
                 }
                 // Unreine Reime: Gleiche Vokalstruktur
                 else if (includeUnreine) {
                     var vowelPattern1 = getVowelPattern(normalizedReim);
-                    var vowelPattern2 = getVowelPattern(searchReim);
-                    
-                    if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
-                        unrein.push(wort);
-                    }
-                }
-            });
-            
-            return { rein: rein, unrein: unrein };
-        }(normalizedReim);
                     var vowelPattern2 = getVowelPattern(searchReim);
                     
                     if (vowelPattern1 === vowelPattern2 && vowelPattern1.length > 0) {
