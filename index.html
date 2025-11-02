@@ -296,31 +296,52 @@
             normalized = normalized.replace(/öö|öh/g, 'ö');
             normalized = normalized.replace(/üü|üh/g, 'ü');
             
-            // B) DIPHTHONGE (längere zuerst!)
+            // B) DIPHTHONGE (längere zuerst!) - GROSSBUCHSTABEN als Marker
             normalized = normalized.replace(/au|ou/g, 'AU');
             normalized = normalized.replace(/ei|äi|ai/g, 'EI');
             normalized = normalized.replace(/eu|öi|äu|oi/g, 'EU');
             
-            // C) KONSONANTENGRUPPEN (längere zuerst!)
-            normalized = normalized.replace(/scht|st|sp/g, 'ST');
-            normalized = normalized.replace(/schp|sp/g, 'SP');
-            normalized = normalized.replace(/sch|sh/g, 'SCH');
+            // C) KONSONANTENGRUPPEN (längere zuerst!) - GROSSBUCHSTABEN als Marker
+            // Diese müssen VOR einzelnen Konsonanten ersetzt werden!
+            normalized = normalized.replace(/ng/g, 'NG');  // ng als Einheit
+            normalized = normalized.replace(/nk/g, 'NG');  // nk → ng
+            normalized = normalized.replace(/ck/g, 'KK');  // ck als k
+            normalized = normalized.replace(/gg/g, 'KK');  // gg als k
+            normalized = normalized.replace(/ch/g, 'KK');  // ch als k
             
-            // D) KONSONANTEN - Äquivalenz-Klassen
-            normalized = normalized.replace(/ng|nk/g, 'N');
-            normalized = normalized.replace(/m/g, 'N');
-            normalized = normalized.replace(/b/g, 'P');
-            normalized = normalized.replace(/d/g, 'T');
-            normalized = normalized.replace(/gg|ck|ch|k/g, 'G');
-            normalized = normalized.replace(/ff|pf|w|v/g, 'F');
-            normalized = normalized.replace(/ss|tz|ts|z/g, 'S');
+            normalized = normalized.replace(/scht/g, 'ST');
+            normalized = normalized.replace(/schp/g, 'SP');
+            normalized = normalized.replace(/sch/g, 'SCH');
+            normalized = normalized.replace(/sh/g, 'SCH');
+            
+            normalized = normalized.replace(/pf/g, 'F');
+            normalized = normalized.replace(/ff/g, 'F');
             normalized = normalized.replace(/ll/g, 'L');
             normalized = normalized.replace(/rr/g, 'R');
-            normalized = normalized.replace(/l/g, 'R');  // l ↔ r
+            normalized = normalized.replace(/ss/g, 'S');
+            normalized = normalized.replace(/tz|ts/g, 'TS');
+            
+            // D) EINZELNE KONSONANTEN - Äquivalenz-Klassen
+            // Nasale
+            normalized = normalized.replace(/m/g, 'N');
+            
+            // Plosive
+            normalized = normalized.replace(/b/g, 'P');
+            normalized = normalized.replace(/d/g, 'T');
+            normalized = normalized.replace(/g/g, 'K');
+            normalized = normalized.replace(/k/g, 'K');
+            
+            // Frikative
+            normalized = normalized.replace(/w/g, 'F');
+            normalized = normalized.replace(/v/g, 'F');
+            normalized = normalized.replace(/z/g, 'S');
+            
+            // Liquide
+            normalized = normalized.replace(/l/g, 'R');
             
             // E) ENDUNGEN
-            normalized = normalized.replace(/ä$/, 'e');
-            normalized = normalized.replace(/eli$/, 'li');
+            normalized = normalized.replace(/ä$/g, 'e');
+            normalized = normalized.replace(/eli$/g, 'li');
             
             return normalized;
         }
