@@ -294,30 +294,32 @@
             
             if (!normalizedSearch) return { rein: rein, unrein: unrein };
             
+            // Finde den Reim-Eintrag des Suchbegriffs
             var searchWord = state.woerter.find(function(w) {
                 return normalizeForReim(w.begriff) === normalizedSearch;
             });
             
-            var searchReim = searchWord ? normalizeForReim(searchWord.reim) : normalizedSearch;
+            var searchReim = searchWord ? normalizeForReim(searchWord.reim) : '';
             
+            // Wenn kein Reim gefunden wurde, abbrechen
             if (!searchReim || searchReim === '') {
-                searchReim = normalizedSearch.slice(-3);
+                return { rein: rein, unrein: unrein };
             }
             
+            // Durchsuche NUR die Reim-Spalte nach EXAKTER Übereinstimmung
             state.woerter.forEach(function(wort) {
                 if (!wort.reim || !wort.begriff) return;
                 
                 var normalizedBegriff = normalizeForReim(wort.begriff);
-                if (normalizedBegriff === normalizedSearch) return;
+                if (normalizedBegriff === normalizedSearch) return; // Überspringe den Suchbegriff selbst
                 
                 var normalizedReim = normalizeForReim(wort.reim);
                 
+                // Reine Reime: Exakte Übereinstimmung des Reim-Eintrags
                 if (normalizedReim === searchReim) {
                     rein.push(wort);
                 }
-                else if (normalizedReim.endsWith(searchReim) || searchReim.endsWith(normalizedReim)) {
-                    rein.push(wort);
-                }
+                // Unreine Reime: Gleiche Vokalstruktur
                 else if (includeUnreine) {
                     var vowelPattern1 = getVowelPattern(normalizedReim);
                     var vowelPattern2 = getVowelPattern(searchReim);
