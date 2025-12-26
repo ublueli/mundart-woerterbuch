@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Schweizer Mundart-Wörterbuch - Vollversion v2.2</title>
+    <title>Schweizer Mundart-Wörterbuch - Vollversion v2.3</title>
     <style>
         :root {
             --bg-primary: #f9fafb;
@@ -73,7 +73,7 @@
         .shuffle-btn { background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; transition: transform 0.2s, box-shadow 0.2s; }
         .shuffle-btn:hover { transform: scale(1.05); box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
         
-        .search-box { background: var(--bg-secondary); padding: 25px; border-radius: 12px; box-shadow: var(--box-shadow); margin-bottom: 30px; }
+        .search-box { background: var(--bg-secondary); padding: 25px; border-radius: 12px; box-shadow: var(--box-shadow); margin-bottom: 30px; overflow: visible; }
         .search-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px; }
         .search-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: center; }
         .form-grid { display: grid; gap: 15px; }
@@ -91,7 +91,9 @@
         .btn-danger:hover { background: #dc2626; }
         .btn-success { background: var(--success-color); }
         .btn-success:hover { background: #059669; }
-        .card { background: var(--bg-secondary); padding: 20px; margin-bottom: 15px; border-radius: 10px; box-shadow: var(--card-shadow); }
+        .btn-small { padding: 8px 16px; font-size: 14px; }
+        .card { background: var(--bg-secondary); padding: 20px; margin-bottom: 15px; border-radius: 10px; box-shadow: var(--card-shadow); cursor: pointer; transition: box-shadow 0.2s; }
+        .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .card h3 { color: var(--accent-color); margin-bottom: 12px; font-size: 20px; }
         .card-row { margin: 8px 0; color: var(--text-secondary); line-height: 1.6; }
         .card-label { font-weight: 600; color: var(--text-primary); }
@@ -148,7 +150,7 @@
         .mapping-arrow { font-size: 20px; color: var(--text-muted); }
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
-        .modal-content { background: var(--bg-secondary); padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+        .modal-content { background: var(--bg-secondary); padding: 30px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; }
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .modal-close { background: var(--bg-tertiary); border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 20px; color: var(--text-primary); }
         .modal-close:hover { background: var(--border-color); }
@@ -156,11 +158,22 @@
         .reim-section h3 { color: var(--accent-color); margin-bottom: 15px; font-size: 20px; padding-left: 10px; border-left: 4px solid var(--accent-color); }
         .search-hint { font-size: 13px; color: var(--text-light); margin-top: 8px; }
         
-        /* Kategorie Filter Chips */
+        /* Kategorie Filter Chips - FIXED */
         .kategorie-filter { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
-        .kategorie-chip { padding: 6px 14px; background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-secondary); transition: all 0.2s; }
+        .kategorie-chip { padding: 6px 14px; background: var(--bg-tertiary); border: 2px solid var(--border-color); border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-secondary); transition: all 0.2s; white-space: nowrap; }
         .kategorie-chip:hover { border-color: var(--accent-color); color: var(--accent-color); }
         .kategorie-chip.active { background: var(--accent-color); border-color: var(--accent-color); color: white; }
+        
+        /* Navigation für Bearbeiten */
+        .edit-navigation { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: var(--bg-tertiary); border-radius: 8px; margin-bottom: 20px; }
+        .edit-nav-info { font-weight: 500; color: var(--text-secondary); }
+        .edit-nav-buttons { display: flex; gap: 10px; }
+        
+        /* Ähnliche Wörter */
+        .similar-words { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); }
+        .similar-words h4 { color: var(--text-muted); font-size: 14px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .similar-word-chip { display: inline-block; padding: 4px 12px; background: var(--bg-tertiary); border-radius: 15px; margin: 3px; font-size: 13px; color: var(--accent-color); cursor: pointer; transition: background 0.2s; }
+        .similar-word-chip:hover { background: var(--accent-light); }
         
         @media (max-width: 768px) {
             .nav-btn { padding: 12px 20px; font-size: 14px; }
@@ -169,6 +182,7 @@
             .hero-section { grid-template-columns: 1fr; }
             .header h1 { font-size: 18px; }
             .alphabet-btn { width: 32px; height: 32px; line-height: 32px; font-size: 14px; }
+            .edit-navigation { flex-direction: column; gap: 10px; }
         }
     </style>
 </head>
@@ -182,7 +196,7 @@
             </div>
         </div>
         <p style="text-align: center; color: var(--text-muted); padding: 0 20px 15px; border-bottom: 1px solid var(--border-color);">
-            Dialekte aus Luzern, Aargau, Solothurn und Bern - Vollversion 2.2
+            Dialekte aus Luzern, Aargau, Solothurn und Bern - Vollversion 2.3
         </p>
         <div class="nav" id="mainNav"></div>
     </div>
@@ -208,6 +222,7 @@
             currentPage: 1,
             currentEditIndex: 0,
             currentEditWord: null,
+            editSearchResults: [],
             isNewEntry: true,
             showUnreineReime: false,
             filter: { mundart: '', deutsch: '', wortart: '', reim: '', kategorie: '', buchstabe: '' },
@@ -372,7 +387,6 @@
         }
         
         function loadWortDesTages() {
-            // Basierend auf dem Datum ein "zufälliges" Wort auswählen
             var today = new Date();
             var dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
             var seed = today.getFullYear() * 1000 + dayOfYear;
@@ -390,8 +404,66 @@
             var randomOffset = Math.floor(Math.random() * Math.max(1, state.totalCount - 1));
             return supabaseCall('woerter?select=*&limit=1&offset=' + randomOffset).then(function(data) {
                 if (data && data.length > 0) {
-                    showModal('🎲 Zufälliges Wort', renderCardContent(data[0]));
+                    showWordDetail(data[0]);
                 }
+            });
+        }
+        
+        function loadSimilarWords(wort) {
+            var promises = [];
+            
+            // Suche nach gleicher Kategorie
+            if (wort.kategorie) {
+                promises.push(
+                    supabaseCall('woerter?select=*&kategorie=eq.' + encodeURIComponent(wort.kategorie) + '&id=neq.' + wort.id + '&limit=5&order=begriff.asc')
+                );
+            }
+            
+            // Suche nach gleichem Reim
+            if (wort.reim) {
+                promises.push(
+                    supabaseCall('woerter?select=*&reim=eq.' + encodeURIComponent(wort.reim) + '&id=neq.' + wort.id + '&limit=5&order=begriff.asc')
+                );
+            }
+            
+            // Suche nach ähnlichen Synonymen
+            if (wort.synonyme) {
+                var firstSynonym = wort.synonyme.split(',')[0].trim();
+                if (firstSynonym.length > 3) {
+                    promises.push(
+                        supabaseCall('woerter?select=*&synonyme=ilike.*' + encodeURIComponent(firstSynonym) + '*&id=neq.' + wort.id + '&limit=5&order=begriff.asc')
+                    );
+                }
+            }
+            
+            return Promise.all(promises).then(function(results) {
+                var allSimilar = [];
+                var seen = {};
+                results.forEach(function(result) {
+                    (result || []).forEach(function(w) {
+                        if (!seen[w.id]) {
+                            seen[w.id] = true;
+                            allSimilar.push(w);
+                        }
+                    });
+                });
+                return allSimilar.slice(0, 10);
+            });
+        }
+        
+        function showWordDetail(wort) {
+            loadSimilarWords(wort).then(function(similar) {
+                var content = renderCardContent(wort);
+                
+                if (similar.length > 0) {
+                    content += '<div class="similar-words"><h4>📚 Ähnliche / Verwandte Wörter</h4>';
+                    similar.forEach(function(w) {
+                        content += '<span class="similar-word-chip" onclick="showWordDetail(' + JSON.stringify(w).replace(/"/g, '&quot;') + ')">' + w.begriff + '</span>';
+                    });
+                    content += '</div>';
+                }
+                
+                showModal('📖 ' + wort.begriff, content);
             });
         }
         
@@ -641,7 +713,7 @@
         }
         
         function renderCard(w) {
-            var html = '<div class="card"><h3>' + (w.begriff || '') + '</h3>';
+            var html = '<div class="card" onclick="showWordDetail(' + JSON.stringify(w).replace(/"/g, '&quot;') + ')"><h3>' + (w.begriff || '') + '</h3>';
             if (w.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + w.reim + '</div>';
             if (w.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + w.wortart + '</div>';
             if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + formatWithLineBreaks(w.synonyme) + '</div>';
@@ -662,7 +734,7 @@
         function renderWoerterbuch() {
             var totalPages = Math.ceil(state.totalCount / CONFIG.ITEMS_PER_PAGE);
             
-            // Hero Section mit Statistik und Wort des Tages
+            // Hero Section
             var html = '<div class="hero-section">';
             html += '<div class="stat-box"><h2>' + state.totalCount.toLocaleString('de-CH') + '</h2><p>Mundart-Wörter im Wörterbuch</p></div>';
             if (state.wortDesTages) {
@@ -692,7 +764,7 @@
             });
             html += '</select></div>';
             
-            // Kategorie Filter
+            // Kategorie Filter - Alle sichtbar
             html += '<div class="kategorie-filter">';
             html += '<span class="kategorie-chip' + (!state.filter.kategorie ? ' active' : '') + '" onclick="filterByKategorie(\'\')">Alle Kategorien</span>';
             state.kategorien.forEach(function(k) {
@@ -700,7 +772,7 @@
             });
             html += '</div>';
             
-            html += '<div class="search-hint">💡 Tipp: Drücke Enter oder warte kurz nach der Eingabe für die Suche</div>';
+            html += '<div class="search-hint">💡 Tipp: Klicke auf eine Karte um Details und ähnliche Wörter zu sehen</div>';
             html += '<div style="margin-top: 10px; color: var(--text-muted); font-size: 14px;">';
             html += state.totalCount + ' Einträge gefunden';
             if (totalPages > 1) {
@@ -810,32 +882,64 @@
             });
         }
         
-        // Bearbeiten View
+        // Bearbeiten View mit Navigation
         function renderBearbeiten() {
             var wort = state.currentEditWord || {};
             var html = '<div class="success-box"><strong>✨ Hilf mit, das Wörterbuch zu erweitern!</strong><br>';
-            html += 'Bearbeite einen bestehenden Begriff. Alle Änderungen werden geprüft.</div>';
+            html += 'Suche einen Begriff, bearbeite ihn und navigiere mit den Pfeilen durch die Ergebnisse.</div>';
             
+            // Suchbox
             html += '<div class="search-box" style="margin-bottom: 20px;"><div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">';
-            html += '<input type="text" id="search-edit-begriff" class="input" placeholder="Begriff suchen zum Bearbeiten..." style="flex: 1; min-width: 250px;">';
+            html += '<input type="text" id="search-edit-begriff" class="input" placeholder="Begriff suchen..." style="flex: 1; min-width: 250px;">';
             html += '<button class="btn" onclick="searchBegriffToEdit()">🔍 Suchen</button>';
+            html += '<button class="btn btn-success" onclick="startNewEntry()">+ Neuer Begriff</button>';
             html += '</div><div id="search-suggestions" style="margin-top: 10px;"></div></div>';
             
+            // Navigation wenn Suchergebnisse vorhanden
+            if (state.editSearchResults.length > 0 && state.currentEditWord) {
+                html += '<div class="edit-navigation">';
+                html += '<button class="btn btn-secondary btn-small" onclick="navigateEdit(-1)"' + (state.currentEditIndex <= 0 ? ' disabled' : '') + '>← Vorheriges</button>';
+                html += '<span class="edit-nav-info">' + (state.currentEditIndex + 1) + ' von ' + state.editSearchResults.length + ' Ergebnissen</span>';
+                html += '<button class="btn btn-secondary btn-small" onclick="navigateEdit(1)"' + (state.currentEditIndex >= state.editSearchResults.length - 1 ? ' disabled' : '') + '>Nächstes →</button>';
+                html += '</div>';
+            }
+            
+            // Formular
             html += '<div class="search-box"><div class="toolbar">';
-            html += '<h2>Bearbeiten:</h2>';
-            html += '<button class="btn btn-success" onclick="toggleNewEntry()">+ Neuer Begriff</button>';
+            html += '<h2>' + (state.isNewEntry ? 'Neuer Begriff' : 'Bearbeiten: ' + (wort.begriff || '')) + '</h2>';
             html += '</div>';
             html += '<form id="edit-form" onsubmit="saveFormEntry(event); return false;"><div class="form-grid">';
+            
+            // Begriff
             html += '<input type="text" name="begriff" class="input" placeholder="Mundartbegriff * (z.B. aabändle)" value="' + (wort.begriff || '') + '"' + (!state.isNewEntry ? ' readonly style="background: var(--bg-tertiary);"' : '') + ' required>';
+            
+            // Reim
             html += '<input type="text" name="reim" class="input" placeholder="Reim (z.B. ändle)" value="' + (wort.reim || '') + '">';
-            html += '<input type="text" name="wortart" class="input" placeholder="Wortart (z.B. Verb)" value="' + (wort.wortart || '') + '">';
+            
+            // Wortart Dropdown mit allen Optionen
+            html += '<select name="wortart" class="input"><option value="">Wortart auswählen...</option>';
+            state.wortarten.forEach(function(w) {
+                html += '<option value="' + w + '"' + (wort.wortart === w ? ' selected' : '') + '>' + w + '</option>';
+            });
+            html += '</select>';
+            
+            // Kategorie Dropdown
+            html += '<select name="kategorie" class="input"><option value="">Kategorie auswählen...</option>';
+            state.kategorien.forEach(function(k) {
+                html += '<option value="' + k + '"' + (wort.kategorie === k ? ' selected' : '') + '>' + k + '</option>';
+            });
+            html += '</select>';
+            
+            // Textfelder
             html += '<textarea name="synonyme" class="input" placeholder="Synonyme / Deutsche Übersetzung" rows="2" style="min-height: 60px;">' + (wort.synonyme || '') + '</textarea>';
             html += '<textarea name="bedeutung" class="input" placeholder="Bedeutung" rows="4">' + (wort.bedeutung || '') + '</textarea>';
             html += '<textarea name="beispielsatz" class="input" placeholder="Beispielsatz" rows="3">' + (wort.beispielsatz || '') + '</textarea>';
             html += '<textarea name="bemerkung" class="input" placeholder="Bemerkungen" rows="3">' + (wort.bemerkung || '') + '</textarea>';
+            
             html += '</div><div class="form-actions">';
-            html += '<button type="submit" class="btn">Änderungen vorschlagen</button>';
+            html += '<button type="submit" class="btn">' + (state.isNewEntry ? 'Neuen Begriff vorschlagen' : 'Änderungen vorschlagen') + '</button>';
             html += '</div></form></div>';
+            
             return html;
         }
         
@@ -846,37 +950,67 @@
                 return;
             }
             var searchTerm = searchInput.value.trim();
-            var searchTermLower = searchTerm.toLowerCase();
-            supabaseCall('woerter?select=*&begriff=ilike.*' + encodeURIComponent(searchTerm) + '*&limit=10&order=begriff.asc').then(function(results) {
+            
+            supabaseCall('woerter?select=*&begriff=ilike.*' + encodeURIComponent(searchTerm) + '*&limit=50&order=begriff.asc').then(function(results) {
+                state.editSearchResults = results || [];
                 var suggestionsDiv = document.getElementById('search-suggestions');
                 if (!suggestionsDiv) return;
+                
                 if (results.length === 0) {
                     suggestionsDiv.innerHTML = '<div class="warning-box">Kein Begriff gefunden. Du kannst ihn als neuen Begriff hinzufügen!</div>';
+                    state.editSearchResults = [];
                     return;
                 }
-                // Exakter Treffer? Direkt laden!
+                
+                // Bei exaktem Treffer oder nur einem Ergebnis: direkt laden
+                var searchTermLower = searchTerm.toLowerCase();
                 var exactMatch = results.find(function(w) {
                     return w.begriff.toLowerCase() === searchTermLower;
                 });
+                
                 if (exactMatch) {
+                    state.currentEditIndex = results.indexOf(exactMatch);
                     selectBegriffToEdit(exactMatch);
-                    suggestionsDiv.innerHTML = '';
+                    suggestionsDiv.innerHTML = '<div class="info-box">' + results.length + ' Ergebnisse gefunden. Nutze die Navigation oben.</div>';
                     return;
                 }
-                // Nur ein Ergebnis? Direkt laden!
+                
                 if (results.length === 1) {
+                    state.currentEditIndex = 0;
                     selectBegriffToEdit(results[0]);
                     suggestionsDiv.innerHTML = '';
                     return;
                 }
+                
                 // Mehrere Ergebnisse: Vorschläge anzeigen
-                var html = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
-                results.forEach(function(w) {
-                    html += '<button class="btn btn-secondary" onclick=\'selectBegriffToEdit(' + JSON.stringify(w).replace(/'/g, "\\'") + ')\' style="padding: 6px 12px; font-size: 14px;">' + w.begriff + '</button>';
+                var html = '<div style="margin-bottom: 10px; color: var(--text-muted);">' + results.length + ' Ergebnisse - wähle einen aus:</div>';
+                html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+                results.slice(0, 20).forEach(function(w, index) {
+                    html += '<button class="btn btn-secondary btn-small" onclick="selectBegriffByIndex(' + index + ')">' + w.begriff + '</button>';
                 });
+                if (results.length > 20) {
+                    html += '<span style="padding: 8px; color: var(--text-muted);">... und ' + (results.length - 20) + ' weitere</span>';
+                }
                 html += '</div>';
                 suggestionsDiv.innerHTML = html;
             });
+        }
+        
+        function selectBegriffByIndex(index) {
+            if (index >= 0 && index < state.editSearchResults.length) {
+                state.currentEditIndex = index;
+                selectBegriffToEdit(state.editSearchResults[index]);
+            }
+        }
+        
+        function navigateEdit(direction) {
+            var newIndex = state.currentEditIndex + direction;
+            if (newIndex >= 0 && newIndex < state.editSearchResults.length) {
+                state.currentEditIndex = newIndex;
+                state.currentEditWord = state.editSearchResults[newIndex];
+                state.isNewEntry = false;
+                render();
+            }
         }
         
         function selectBegriffToEdit(wort) {
@@ -886,9 +1020,11 @@
             showToast('Begriff "' + wort.begriff + '" geladen', 'success');
         }
         
-        function toggleNewEntry() {
-            state.isNewEntry = !state.isNewEntry;
+        function startNewEntry() {
+            state.isNewEntry = true;
             state.currentEditWord = null;
+            state.editSearchResults = [];
+            state.currentEditIndex = 0;
             render();
         }
         
@@ -905,7 +1041,8 @@
                 wort_id: state.isNewEntry ? null : (state.currentEditWord ? state.currentEditWord.id : null),
                 begriff: sanitizeInput(begriff),
                 reim: sanitizeInput(formData.get('reim')) || null,
-                wortart: sanitizeInput(formData.get('wortart')) || null,
+                wortart: formData.get('wortart') || null,
+                kategorie: formData.get('kategorie') || null,
                 synonyme: sanitizeInput(formData.get('synonyme')) || null,
                 bedeutung: sanitizeInput(formData.get('bedeutung')) || null,
                 beispielsatz: sanitizeInput(formData.get('beispielsatz')) || null,
@@ -919,8 +1056,13 @@
                 headers: { 'Prefer': 'return=representation' }
             }).then(function() {
                 showToast(state.isNewEntry ? 'Neuer Begriff vorgeschlagen! ✓' : 'Änderung vorgeschlagen! ✓', 'success');
-                state.isNewEntry = true;
-                state.currentEditWord = null;
+                // Zum nächsten Wort navigieren wenn vorhanden
+                if (!state.isNewEntry && state.editSearchResults.length > 0 && state.currentEditIndex < state.editSearchResults.length - 1) {
+                    navigateEdit(1);
+                } else {
+                    state.isNewEntry = true;
+                    state.currentEditWord = null;
+                }
                 return loadPendingChanges();
             }).then(function() {
                 render();
@@ -956,14 +1098,15 @@
                 html += '<div class="empty">Keine ausstehenden Änderungen</div>';
             } else {
                 state.pendingChanges.forEach(function(c) {
-                    html += '<div class="card"><div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">';
+                    html += '<div class="card" style="cursor: default;"><div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">';
                     html += '<div><h3>' + c.begriff + '</h3><span class="pending-badge" style="margin-left: 0;">' + (c.action === 'create' ? 'Neuer Eintrag' : 'Bearbeitung') + '</span></div>';
                     html += '<div style="display: flex; gap: 8px;">';
-                    html += '<button class="btn" style="padding: 8px 16px;" onclick="approveChange(' + c.id + ')">✓ Freigeben</button>';
-                    html += '<button class="btn btn-danger" style="padding: 8px 16px;" onclick="rejectChange(' + c.id + ')">✗ Ablehnen</button>';
+                    html += '<button class="btn btn-small" onclick="approveChange(' + c.id + ')">✓ Freigeben</button>';
+                    html += '<button class="btn btn-danger btn-small" onclick="rejectChange(' + c.id + ')">✗ Ablehnen</button>';
                     html += '</div></div>';
                     if (c.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + c.reim + '</div>';
                     if (c.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + c.wortart + '</div>';
+                    if (c.kategorie) html += '<div class="card-row"><span class="card-label">Kategorie:</span> ' + c.kategorie + '</div>';
                     if (c.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + c.synonyme + '</div>';
                     if (c.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + c.bedeutung + '</div>';
                     if (c.beispielsatz) html += '<div class="card-row"><span class="card-label">Beispiel:</span> <em>"' + c.beispielsatz + '"</em></div>';
@@ -1062,6 +1205,7 @@
                         begriff: change.begriff,
                         reim: change.reim,
                         wortart: change.wortart,
+                        kategorie: change.kategorie,
                         synonyme: change.synonyme,
                         bedeutung: change.bedeutung,
                         beispielsatz: change.beispielsatz,
@@ -1075,6 +1219,7 @@
                         begriff: change.begriff,
                         reim: change.reim,
                         wortart: change.wortart,
+                        kategorie: change.kategorie,
                         synonyme: change.synonyme,
                         bedeutung: change.bedeutung,
                         beispielsatz: change.beispielsatz,
@@ -1115,6 +1260,7 @@
                             begriff: change.begriff,
                             reim: change.reim,
                             wortart: change.wortart,
+                            kategorie: change.kategorie,
                             synonyme: change.synonyme,
                             bedeutung: change.bedeutung,
                             beispielsatz: change.beispielsatz,
@@ -1128,6 +1274,7 @@
                             begriff: change.begriff,
                             reim: change.reim,
                             wortart: change.wortart,
+                            kategorie: change.kategorie,
                             synonyme: change.synonyme,
                             bedeutung: change.bedeutung,
                             beispielsatz: change.beispielsatz,
@@ -1440,6 +1587,8 @@
             if (view === 'bearbeiten') {
                 state.isNewEntry = true;
                 state.currentEditWord = null;
+                state.editSearchResults = [];
+                state.currentEditIndex = 0;
             }
             if (view === 'reimlexikon') {
                 reimResults = { rein: [], unrein: [] };
