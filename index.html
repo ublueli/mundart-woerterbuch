@@ -141,10 +141,10 @@
         .reim-section h3 { color: var(--accent-color); margin-bottom: 12px; font-size: 18px; padding-left: 10px; border-left: 3px solid var(--accent-color); }
         .search-hint { font-size: 12px; color: var(--text-light); margin-top: 6px; }
         
-        /* Navigation für Bearbeiten */
-        .edit-navigation { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 15px; }
-        .edit-nav-info { font-weight: 500; color: var(--text-secondary); text-align: center; font-size: 14px; }
-        .edit-nav-buttons { display: flex; gap: 8px; }
+        /* Navigation für Bearbeiten - alles in einer Zeile */
+        .edit-navigation { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; margin-bottom: 15px; flex-wrap: nowrap; gap: 10px; }
+        .edit-nav-info { font-weight: 500; color: var(--text-secondary); text-align: center; font-size: 14px; white-space: nowrap; }
+        .edit-nav-buttons { display: flex; gap: 8px; flex-shrink: 0; }
         
         /* Ähnliche Wörter */
         .similar-words { margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color); }
@@ -160,8 +160,10 @@
             .form-row { grid-template-columns: 1fr; }
             .hero-section { flex-direction: column; }
             .header h1 { font-size: 18px; }
-            .edit-navigation { flex-direction: column; gap: 10px; }
-            .edit-nav-buttons { width: 100%; justify-content: space-between; }
+            .edit-navigation { flex-wrap: nowrap; padding: 8px; gap: 5px; }
+            .edit-nav-buttons { gap: 4px; }
+            .edit-nav-buttons .btn-small { padding: 5px 8px; font-size: 12px; }
+            .edit-nav-info { font-size: 12px; }
         }
     </style>
 </head>
@@ -175,7 +177,7 @@
             </div>
         </div>
         <p style="text-align: center; color: var(--text-muted); padding: 0 20px 12px; border-bottom: 1px solid var(--border-color); font-size: 14px;">
-            Dialekte aus Luzern, Aargau, Solothurn und Bern - v2.5
+            Dialekte aus Luzern, Aargau, Solothurn und Bern - v2.6
         </p>
         <div class="nav" id="mainNav"></div>
     </div>
@@ -283,10 +285,22 @@
             });
         }
         
+        // Hilfsfunktion: Prüft ob ein Wort als ganzes Wort vorkommt (nicht als Teilstring)
+        function containsWholeWord(text, searchWord) {
+            if (!text || !searchWord) return false;
+            var regex = new RegExp('(^|[,;\\s])' + searchWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[,;\\s])', 'i');
+            return regex.test(text);
+        }
+        
         function loadPageData(page, filters) {
             state.isLoading = true;
             var offset = (page - 1) * CONFIG.ITEMS_PER_PAGE;
             var queryParts = [];
+            
+            // Für Mundart und Deutsch laden wir mehr Daten und filtern clientseitig
+            var needsClientFilter = (filters.mundart && filters.mundart.trim()) || (filters.deutsch && filters.deutsch.trim());
+            var loadLimit = needsClientFilter ? 500 : CONFIG.ITEMS_PER_PAGE;
+            var loadOffset = needsClientFilter ? 0 : offset;
             
             if (filters.mundart && filters.mundart.trim()) queryParts.push('begriff=ilike.*' + encodeURIComponent(filters.mundart.trim()) + '*');
             if (filters.deutsch && filters.deutsch.trim()) queryParts.push('synonyme=ilike.*' + encodeURIComponent(filters.deutsch.trim()) + '*');
@@ -294,13 +308,41 @@
             if (filters.kategorie && filters.kategorie !== 'alle') queryParts.push('kategorie=eq.' + encodeURIComponent(filters.kategorie));
             if (filters.buchstabe && filters.buchstabe.trim()) queryParts.push('begriff=ilike.' + encodeURIComponent(filters.buchstabe) + '*');
             
-            var url = 'woerter?select=*&order=begriff.asc&limit=' + CONFIG.ITEMS_PER_PAGE + '&offset=' + offset;
+            var url = 'woerter?select=*&order=begriff.asc&limit=' + loadLimit + '&offset=' + loadOffset;
             if (queryParts.length > 0) url += '&' + queryParts.join('&');
             
             return supabaseCall(url, { headers: { 'Prefer': 'count=exact' } }).then(function(data) {
-                state.currentPageData = data || [];
+                var results = data || [];
+                
+                // Clientseitige Filterung für exakte Wortübereinstimmung
+                if (filters.mundart && filters.mundart.trim()) {
+                    var searchMundart = filters.mundart.trim().toLowerCase();
+                    results = results.filter(function(w) {
+                        // Exakte Übereinstimmung oder als ganzes Wort im Begriff
+                        var begriff = (w.begriff || '').toLowerCase();
+                        return begriff === searchMundart || containsWholeWord(begriff, searchMundart);
+                    });
+                }
+                
+                if (filters.deutsch && filters.deutsch.trim()) {
+                    var searchDeutsch = filters.deutsch.trim().toLowerCase();
+                    results = results.filter(function(w) {
+                        // Muss als ganzes Wort in den Synonymen vorkommen
+                        return containsWholeWord(w.synonyme || '', searchDeutsch);
+                    });
+                }
+                
+                // Wenn clientseitig gefiltert, aktualisiere totalCount
+                if (needsClientFilter) {
+                    state.totalCount = results.length;
+                    // Pagination auf gefilterte Ergebnisse anwenden
+                    var startIdx = (page - 1) * CONFIG.ITEMS_PER_PAGE;
+                    results = results.slice(startIdx, startIdx + CONFIG.ITEMS_PER_PAGE);
+                }
+                
+                state.currentPageData = results;
                 state.isLoading = false;
-                return data;
+                return results;
             });
         }
         
@@ -435,6 +477,11 @@
             loadSimilarWords(wort).then(function(similar) {
                 var content = renderCardContent(wort);
                 
+                // Bearbeiten-Button
+                content += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">';
+                content += '<button class="btn" onclick="editWordFromModal(' + wort.id + ')">✏️ Bearbeiten</button>';
+                content += '</div>';
+                
                 if (similar.length > 0) {
                     content += '<div class="similar-words"><h4>📚 Wörter mit ähnlicher Bedeutung</h4>';
                     similar.forEach(function(w) {
@@ -444,6 +491,24 @@
                 }
                 
                 showModal('📖 ' + wort.begriff, content);
+            });
+        }
+        
+        // Funktion um direkt zur Bearbeitung zu springen
+        function editWordFromModal(id) {
+            closeModal();
+            supabaseCall('woerter?id=eq.' + id).then(function(data) {
+                if (data && data.length > 0) {
+                    state.currentEditWord = data[0];
+                    state.isNewEntry = false;
+                    // Falls allWordsLoaded, finde den Index
+                    if (state.allWordsLoaded) {
+                        var idx = state.allWordsForEdit.findIndex(function(w) { return w.id === id; });
+                        if (idx >= 0) state.currentEditIndex = idx;
+                    }
+                    changeView('bearbeiten');
+                    showToast('Bearbeite: ' + data[0].begriff, 'success');
+                }
             });
         }
         
@@ -695,7 +760,24 @@
         // Bearbeiten View
         function renderBearbeiten() {
             var wort = state.currentEditWord || {};
-            var html = '<div class="success-box"><strong>✨ Hilf mit!</strong> Klicke "Alle Wörter laden" um alphabetisch durchzugehen.</div>';
+            
+            // Anleitung
+            var html = '<div class="info-box" style="margin-bottom: 15px;">';
+            html += '<strong>📝 So kannst du mithelfen</strong>';
+            html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 10px;">';
+            html += '<div><strong>Neues Wort:</strong><ol style="margin: 5px 0 0 20px; padding: 0;">';
+            html += '<li>Klicke auf <strong>«+ Neu»</strong></li>';
+            html += '<li>Fülle mindestens «Begriff» aus</li>';
+            html += '<li>Klicke auf <strong>«Vorschlagen»</strong></li>';
+            html += '</ol></div>';
+            html += '<div><strong>Wort bearbeiten:</strong><ol style="margin: 5px 0 0 20px; padding: 0;">';
+            html += '<li>Suche oder navigiere zum Wort</li>';
+            html += '<li>Ergänze oder korrigiere</li>';
+            html += '<li>Klicke auf <strong>«Änderung vorschlagen»</strong></li>';
+            html += '</ol></div>';
+            html += '</div>';
+            html += '<p style="margin-top: 10px; font-size: 12px;">⏳ Alle Vorschläge werden vor der Veröffentlichung geprüft.</p>';
+            html += '</div>';
             
             html += '<div class="search-box" style="margin-bottom: 15px;">';
             html += '<div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px;">';
@@ -843,8 +925,12 @@
         function saveFormEntry(event) {
             event.preventDefault();
             var formData = new FormData(event.target);
-            var begriff = formData.get('begriff').trim();
-            if (!begriff || begriff.length < 2) { showToast('Begriff zu kurz', 'error'); return; }
+            var begriff = formData.get('begriff');
+            if (!begriff || !begriff.trim() || begriff.trim().length < 2) { 
+                showToast('Begriff muss mindestens 2 Zeichen haben', 'error'); 
+                return; 
+            }
+            begriff = begriff.trim();
             
             var wortart = formData.get('wortart');
             var wortartCustom = document.getElementById('wortart-custom');
@@ -860,23 +946,36 @@
                 action: state.isNewEntry ? 'create' : 'edit',
                 wort_id: state.isNewEntry ? null : (state.currentEditWord ? state.currentEditWord.id : null),
                 begriff: sanitizeInput(begriff),
-                reim: sanitizeInput(formData.get('reim')) || null,
+                reim: sanitizeInput(formData.get('reim') || '') || null,
                 wortart: wortart || null,
                 kategorie: kategorie || null,
-                synonyme: sanitizeInput(formData.get('synonyme')) || null,
-                bedeutung: sanitizeInput(formData.get('bedeutung')) || null,
-                beispielsatz: sanitizeInput(formData.get('beispielsatz')) || null,
-                bemerkung: sanitizeInput(formData.get('bemerkung')) || null,
+                synonyme: sanitizeInput(formData.get('synonyme') || '') || null,
+                bedeutung: sanitizeInput(formData.get('bedeutung') || '') || null,
+                beispielsatz: sanitizeInput(formData.get('beispielsatz') || '') || null,
+                bemerkung: sanitizeInput(formData.get('bemerkung') || '') || null,
                 status: 'pending',
                 created_at: new Date().toISOString()
             };
             
-            supabaseCall('pending_changes', { method: 'POST', body: JSON.stringify(data) }).then(function() {
-                showToast(state.isNewEntry ? 'Vorgeschlagen! ✓' : 'Änderung vorgeschlagen! ✓', 'success');
-                if (wortart && !state.wortarten.includes(wortart)) { state.wortarten.push(wortart); state.wortarten.sort(); }
-                if (kategorie && !state.kategorien.includes(kategorie)) { state.kategorien.push(kategorie); state.kategorien.sort(); }
-                return loadPendingChanges();
-            }).then(render);
+            console.log('Sende Vorschlag:', data);
+            
+            supabaseCall('pending_changes', { method: 'POST', body: JSON.stringify(data) })
+                .then(function(response) {
+                    console.log('Vorschlag erfolgreich:', response);
+                    showToast(state.isNewEntry ? 'Vorgeschlagen! ✓' : 'Änderung vorgeschlagen! ✓', 'success');
+                    if (wortart && !state.wortarten.includes(wortart)) { state.wortarten.push(wortart); state.wortarten.sort(); }
+                    if (kategorie && !state.kategorien.includes(kategorie)) { state.kategorien.push(kategorie); state.kategorien.sort(); }
+                    if (state.isNewEntry) {
+                        state.isNewEntry = false;
+                        state.currentEditWord = null;
+                    }
+                    return loadPendingChanges();
+                })
+                .then(render)
+                .catch(function(error) {
+                    console.error('Fehler beim Speichern:', error);
+                    showToast('Fehler: ' + error.message, 'error');
+                });
         }
         
         function saveAndNext() {
@@ -963,7 +1062,32 @@
         }
         
         function renderInfo() {
-            return '<div class="info-content"><h2>Über</h2><p>Mundart-Wörterbuch aus Luzern, Aargau, Solothurn und Bern.</p><h2>Mitmachen</h2><p>Unter "Mithelfen" kannst du Wörter ergänzen.</p><h2>Kontakt</h2><p>info [at] ueliblum [punkt] ch</p></div>';
+            return '<div class="info-content">' +
+                '<h2>Über dieses Wörterbuch</h2>' +
+                '<p>Dieses Mundart-Wörterbuch ist aus meiner über <strong>dreissigjährigen Übersetzertätigkeit</strong> von Theaterstücken in die Schweizer Mundart entstanden. Was als persönliche Wortsammlung begann, ist über die Jahre zu einem umfangreichen Nachschlagewerk gewachsen.</p>' +
+                '<p>👉 <a href="https://ueliblum.ch/mundartuebersetzungen/" target="_blank" style="color: var(--accent-color);">Mehr zu meinen Mundartübersetzungen</a></p>' +
+                
+                '<h2>Schreibweise: Lesbar, nicht phonetisch</h2>' +
+                '<p>Die Wörter sind so geschrieben, dass sie <strong>gelesen und verstanden</strong> werden können – nicht so, wie sie in einer bestimmten Region ausgesprochen werden.</p>' +
+                '<p><strong>Beispiel:</strong> Ich schreibe <strong>«Felse»</strong> und nicht «Föuse» oder «Feuse».</p>' +
+                '<p>So kann jede Region das Wort nach ihrer eigenen Aussprache lesen:</p>' +
+                '<ul style="margin: 10px 0 10px 20px; color: var(--text-secondary);">' +
+                '<li>Luzern liest es als «Fäuse»</li>' +
+                '<li>Bern liest es als «Föuse»</li>' +
+                '<li>Aargau liest es als «Felse»</li>' +
+                '</ul>' +
+                '<p>Die Schreibweise ist ein <strong>gemeinsamer Nenner</strong>, der allen Dialekten gerecht wird.</p>' +
+                
+                '<h2>Ein praktisches Werkzeug</h2>' +
+                '<p>Dieses Wörterbuch ist <strong>kein wissenschaftliches Nachschlagewerk</strong> mit phonetischer Lautschrift und sprachwissenschaftlichen Analysen. Es ist ein <strong>praktisches Werkzeug</strong> für alle, die Mundart schreiben – sei es für Theater, Geschichten, Lieder oder den Alltag.</p>' +
+                
+                '<h2>Mitmachen</h2>' +
+                '<p>Du kennst ein Wort, das hier fehlt? Oder hast du eine Ergänzung? Unter <strong>«Mithelfen»</strong> kannst du neue Begriffe vorschlagen oder bestehende Einträge ergänzen.</p>' +
+                '<p><strong>Hinweis:</strong> Alle Vorschläge werden vor der Veröffentlichung geprüft und müssen freigegeben werden. Das hilft, die Qualität des Wörterbuchs zu sichern.</p>' +
+                
+                '<h2>Kontakt</h2>' +
+                '<p>Fragen, Anregungen oder Feedback?<br>📧 info [at] ueliblum [punkt] ch</p>' +
+                '</div>';
         }
         
         function renderLogin() {
