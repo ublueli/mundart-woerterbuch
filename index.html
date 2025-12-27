@@ -1062,33 +1062,34 @@
         }
         
         function renderInfo() {
-            return '<div class="info-content">' +
-                '<h2>Über dieses Wörterbuch</h2>' +
-                '<p>Dieses Mundart-Wörterbuch ist aus meiner über <strong>dreissigjährigen Übersetzertätigkeit</strong> von Theaterstücken in die Schweizer Mundart entstanden. Was als persönliche Wortsammlung begann, ist über die Jahre zu einem umfangreichen Nachschlagewerk gewachsen.</p>' +
-                '<p>👉 <a href="https://ueliblum.ch/mundartuebersetzungen/" target="_blank" style="color: var(--accent-color);">Mehr zu meinen Mundartübersetzungen</a></p>' +
-                
-                '<h2>Schreibweise: Lesbar, nicht phonetisch</h2>' +
-                '<p>Die Wörter sind so geschrieben, dass sie <strong>gelesen und verstanden</strong> werden können – nicht so, wie sie in einer bestimmten Region ausgesprochen werden.</p>' +
-                '<p><strong>Beispiel:</strong> Ich schreibe <strong>«Felse»</strong> und nicht «Föuse» oder «Feuse».</p>' +
-                '<p>So kann jede Region das Wort nach ihrer eigenen Aussprache lesen:</p>' +
-                '<ul style="margin: 10px 0 10px 20px; color: var(--text-secondary);">' +
-                '<li>Luzern liest es als «Fäuse»</li>' +
-                '<li>Bern liest es als «Föuse»</li>' +
-                '<li>Aargau liest es als «Felse»</li>' +
-                '</ul>' +
-                '<p>Die Schreibweise ist ein <strong>gemeinsamer Nenner</strong>, der allen Dialekten gerecht wird.</p>' +
-                
-                '<h2>Ein praktisches Werkzeug</h2>' +
-                '<p>Dieses Wörterbuch ist <strong>kein wissenschaftliches Nachschlagewerk</strong> mit phonetischer Lautschrift und sprachwissenschaftlichen Analysen. Es ist ein <strong>praktisches Werkzeug</strong> für alle, die Mundart schreiben – sei es für Theater, Geschichten, Lieder oder den Alltag.</p>' +
-                
-                '<h2>Mitmachen</h2>' +
-                '<p>Du kennst ein Wort, das hier fehlt? Oder hast du eine Ergänzung? Unter <strong>«Mithelfen»</strong> kannst du neue Begriffe vorschlagen oder bestehende Einträge ergänzen.</p>' +
-                '<p><strong>Hinweis:</strong> Alle Vorschläge werden vor der Veröffentlichung geprüft und müssen freigegeben werden. Das hilft, die Qualität des Wörterbuchs zu sichern.</p>' +
-                
-                '<h2>Kontakt</h2>' +
-                '<p>Fragen, Anregungen oder Feedback?<br>📧 info [at] ueliblum [punkt] ch</p>' +
-                '</div>';
-        }
+    return '<div class="info-content">' +
+        '<h2>Über dieses Wörterbuch</h2>' +
+        '<p>Dieses Mundart-Wörterbuch ist aus meiner über <strong>dreissigjährigen Übersetzertätigkeit</strong> von Theaterstücken in die Schweizer Mundart entstanden. Was als persönliche Wortsammlung begann, ist über die Jahre zu einem umfangreichen Nachschlagewerk gewachsen.</p>' +
+        '<p>👉 <a href="https://ueliblum.ch/mundartuebersetzungen/" target="_blank" style="color: var(--accent-color);">Mehr zu meinen Mundartübersetzungen</a></p>' +
+        
+        '<h2>Schreibweise: Lesbar, nicht phonetisch</h2>' +
+        '<p>Die Schreibweise orientiert sich an der <strong>Lesbarkeit und Verständlichkeit</strong> – nicht an der Aussprache einer bestimmten Region.</p>' +
+        '<p><strong>Beispiel:</strong> Ich schreibe <strong>«Milch»</strong> und nicht «Miuch» oder «Möuch».</p>' +
+        '<p>So kann jede Region das Wort tendenziell nach ihrer eigenen Aussprache lesen:</p>' +
+        '<ul style="margin: 10px 0 10px 20px; color: var(--text-secondary);">' +
+        '<li>Nidwalden liest es als «Miuch»</li>' +
+        '<li>Luzern liest es als «Möuch»</li>' +
+        '<li>Bern liest es als «Milch»</li>' +
+        '</ul>' +
+        '<p>Die Schreibweise ist ein <strong>gemeinsamer Nenner</strong>, der allen Dialekten möglichst gerecht wird.</p>' +
+        '<p><strong>Fremdwörter:</strong> Bei Wörtern aus dem Französischen oder Englischen wurde die Schreibweise des Originals in der Regel beibehalten (z.B. Trottoir, Computer).</p>' +
+        
+        '<h2>Ein praktisches Werkzeug</h2>' +
+        '<p>Dieses Wörterbuch ist <strong>kein wissenschaftliches Nachschlagewerk</strong> mit phonetischer Lautschrift und sprachwissenschaftlichen Analysen. Es ist ein <strong>praktisches Werkzeug</strong> für alle, die Mundart schreiben – sei es für Theater, Geschichten, Lieder oder den Alltag.</p>' +
+        
+        '<h2>Mitmachen</h2>' +
+        '<p>Du kennst ein Wort, das hier fehlt? Oder hast du eine Ergänzung? Unter <strong>«Mithelfen»</strong> kannst du neue Begriffe vorschlagen oder bestehende Einträge ergänzen.</p>' +
+        '<p><strong>Hinweis:</strong> Alle Vorschläge werden vor der Veröffentlichung geprüft und müssen freigegeben werden. Das hilft, die Qualität des Wörterbuchs zu sichern.</p>' +
+        
+        '<h2>Kontakt</h2>' +
+        '<p>Fragen, Anregungen oder Feedback?<br>📧 info [at] ueliblum [punkt] ch</p>' +
+        '</div>';
+}
         
         function renderLogin() {
             return '<div class="login-box"><h2>Admin</h2><form onsubmit="handleLogin(event);return false;"><input type="password" name="password" class="input" placeholder="Passwort" required><button type="submit" class="btn" style="width:100%;margin-top:12px;">Login</button></form></div>';
