@@ -207,7 +207,7 @@
             allWordsLoaded: false,
             isNewEntry: false,
             showUnreineReime: false,
-            filter: { mundart: '', deutsch: '', wortart: '', reim: '', kategorie: '', buchstabe: '' },
+            filter: { mundart: '', deutsch: '', wortart: '', reim: '', kategorie: '', buchstabe: '', thesaurus: '' },
             searchDebounceTimer: null,
             wortarten: [],
             kategorien: [],
@@ -292,6 +292,15 @@
             return regex.test(text);
         }
         
+        function firstSynonymOf(w) {
+            return ((w.synonyme || '').split(/[,;]/)[0] || '').replace(/^\s*\d+\.\s*/, '').trim().toLowerCase();
+        }
+        function directRank(w, term) {
+            var fs = firstSynonymOf(w);
+            if (fs === term) return 2;
+            if (fs.indexOf(term) === 0) return 1;
+            return 0;
+        }
         function loadPageData(page, filters) {
             state.isLoading = true;
             var offset = (page - 1) * CONFIG.ITEMS_PER_PAGE;
@@ -330,6 +339,8 @@
                         // Muss als ganzes Wort in den Synonymen vorkommen
                         return containsWholeWord(w.synonyme || '', searchDeutsch);
                     });
+                    results.forEach(function(w) { w._direct = (directRank(w, searchDeutsch) === 2); });
+                    results.sort(function(a, b) { return directRank(b, searchDeutsch) - directRank(a, searchDeutsch); });
                 }
                 
                 // Wenn clientseitig gefiltert, aktualisiere totalCount
@@ -570,15 +581,18 @@
         
         // Reimlexikon
         function searchReime(searchTerm) {
-            if (!searchTerm || !searchTerm.trim()) return Promise.resolve({ rein: [] });
+            if (!searchTerm || !searchTerm.trim()) return Promise.resolve({ rein: [], unrein: [] });
             var normalizedSearch = searchTerm.toLowerCase().trim();
             return supabaseCall('woerter?select=*&begriff=ilike.' + encodeURIComponent(normalizedSearch) + '&limit=1').then(function(searchResult) {
-                var searchReim = normalizedSearch;
-                if (searchResult && searchResult.length > 0 && searchResult[0].reim) searchReim = searchResult[0].reim.toLowerCase().trim();
-                if (!searchReim) return { rein: [] };
-                return supabaseCall('woerter?select=*&reim=ilike.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200').then(function(reineReime) {
-                    var rein = (reineReime || []).filter(function(w) { return w.begriff.toLowerCase().trim() !== normalizedSearch; });
-                    return { rein: rein };
+                var entry = (searchResult && searchResult.length > 0) ? searchResult[0] : null;
+                var searchReim = (entry && entry.reim) ? entry.reim.toLowerCase().trim() : normalizedSearch;
+                var searchAss = (entry && entry.reim_assonanz) ? entry.reim_assonanz.toLowerCase().trim() : '';
+                if (!searchReim) return { rein: [], unrein: [] };
+                var pRein = supabaseCall('woerter?select=*&reim=ilike.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200');
+                var pUnrein = searchAss ? supabaseCall('woerter?select=*&reim_assonanz=eq.' + encodeURIComponent(searchAss) + '&reim=neq.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200') : Promise.resolve([]);
+                return Promise.all([pRein, pUnrein]).then(function(res) {
+                    var f = function(w) { return w.begriff.toLowerCase().trim() !== normalizedSearch; };
+                    return { rein: (res[0] || []).filter(f), unrein: (res[1] || []).filter(f) };
                 });
             });
         }
@@ -647,7 +661,7 @@
         }
         
         function renderCard(w) {
-            var html = '<div class="card" onclick="showWordDetailById(' + w.id + ')"><h3>' + (w.begriff || '') + '</h3>';
+            var html = '<div class="card" onclick="showWordDetailById(' + w.id + ')"><h3>' + (w.begriff || '') + (w._direct ? ' <span style="font-size:12px;background:var(--accent-color);color:#fff;padding:2px 8px;border-radius:10px;vertical-align:middle;white-space:nowrap;">★ direkte Entsprechung</span>' : '') + '</h3>';
             if (w.reim) html += '<div class="card-row"><span class="card-label">Reim:</span> ' + w.reim + '</div>';
             if (w.wortart) html += '<div class="card-row"><span class="card-label">Wortart:</span> ' + w.wortart + '</div>';
             if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + w.synonyme + '</div>';
@@ -657,6 +671,46 @@
             return html;
         }
         
+        // Thesaurus (Mundart -> verwandte Mundartwörter)
+        var thesaurusResults = null;
+        var thesaurusLoading = false;
+
+        function renderThesaurus() {
+            var searchTerm = state.filter.thesaurus || '';
+            var html = '<div class="search-box">';
+            html += '<input type="text" id="search-thesaurus" class="input" placeholder="Mundartbegriff eingeben..." value="' + searchTerm + '">';
+            html += '<div class="search-hint">💡 Verwandte Mundartwörter über gemeinsame Bedeutung</div></div>';
+            if (thesaurusLoading) {
+                html += '<div class="loading"><div class="spinner"></div></div>';
+            } else if (!searchTerm.trim()) {
+                html += '<div class="empty">Gib einen Begriff ein</div>';
+            } else if (!thesaurusResults) {
+                html += '<div class="empty">Kein Eintrag gefunden</div>';
+            } else {
+                html += renderCard(thesaurusResults.wort);
+                html += '<div class="reim-section"><h3>Verwandte Mundartwörter (' + thesaurusResults.related.length + ')</h3>';
+                if (thesaurusResults.related.length === 0) html += '<div class="empty">Keine verwandten Wörter gefunden</div>';
+                else thesaurusResults.related.forEach(function(w) { html += renderCard(w); });
+                html += '</div>';
+            }
+            return html;
+        }
+
+        function doThesaurusSearch() {
+            var searchTerm = state.filter.thesaurus;
+            if (!searchTerm || !searchTerm.trim()) { thesaurusResults = null; render(); return; }
+            thesaurusLoading = true; render();
+            var q = searchTerm.toLowerCase().trim();
+            supabaseCall('woerter?select=*&begriff=ilike.' + encodeURIComponent(q) + '&limit=1').then(function(found) {
+                if (!found || found.length === 0) { thesaurusResults = null; thesaurusLoading = false; render(); return; }
+                var wort = found[0];
+                loadSimilarWords(wort).then(function(similar) {
+                    thesaurusResults = { wort: wort, related: similar || [] };
+                    thesaurusLoading = false; render();
+                });
+            });
+        }
+
         // Wörterbuch View
         function renderWoerterbuch() {
             var totalPages = Math.ceil(state.totalCount / CONFIG.ITEMS_PER_PAGE);
@@ -729,7 +783,7 @@
         }
         
         // Reimlexikon
-        var reimResults = { rein: [] };
+        var reimResults = { rein: [], unrein: [] };
         var reimLoading = false;
         
         function renderReimlexikon() {
@@ -740,9 +794,14 @@
             if (reimLoading) {
                 html += '<div class="loading"><div class="spinner"></div></div>';
             } else if (searchTerm.trim()) {
-                html += '<div class="reim-section"><h3>Reime (' + reimResults.rein.length + ')</h3>';
-                if (reimResults.rein.length === 0) html += '<div class="empty">Keine Reime gefunden</div>';
+                html += '<div class="reim-section"><h3>Reine Reime (' + reimResults.rein.length + ')</h3>';
+                if (reimResults.rein.length === 0) html += '<div class="empty">Keine reinen Reime gefunden</div>';
                 else reimResults.rein.forEach(function(w) { html += renderCard(w); });
+                html += '</div>';
+                var unreineListe = reimResults.unrein || [];
+                html += '<div class="reim-section"><h3>Unreine Reime (' + unreineListe.length + ')</h3>';
+                if (unreineListe.length === 0) html += '<div class="empty">Keine unreinen Reime gefunden</div>';
+                else unreineListe.forEach(function(w) { html += renderCard(w); });
                 html += '</div>';
             } else {
                 html += '<div class="empty">Gib einen Begriff ein</div>';
@@ -752,7 +811,7 @@
         
         function doReimSearch() {
             var searchTerm = state.filter.reim;
-            if (!searchTerm || !searchTerm.trim()) { reimResults = { rein: [] }; render(); return; }
+            if (!searchTerm || !searchTerm.trim()) { reimResults = { rein: [], unrein: [] }; render(); return; }
             reimLoading = true; render();
             searchReime(searchTerm).then(function(results) { reimResults = results; reimLoading = false; render(); });
         }
@@ -1103,6 +1162,7 @@
         
         var debouncedSearch = debounce(function() { state.currentPage = 1; state.filter.buchstabe = ''; loadPageData(1, state.filter).then(render); }, CONFIG.DEBOUNCE_DELAY);
         var debouncedReimSearch = debounce(doReimSearch, CONFIG.DEBOUNCE_DELAY);
+        var debouncedThesaurusSearch = debounce(doThesaurusSearch, CONFIG.DEBOUNCE_DELAY);
         
         function attachEventListeners() {
             var el;
@@ -1112,6 +1172,8 @@
             if (el) el.addEventListener('input', function(e) { state.filter.deutsch = e.target.value; debouncedSearch(); });
             el = document.getElementById('search-reim');
             if (el) { el.addEventListener('input', function(e) { state.filter.reim = e.target.value; debouncedReimSearch(); }); el.addEventListener('keypress', function(e) { if (e.key === 'Enter') doReimSearch(); }); }
+            el = document.getElementById('search-thesaurus');
+            if (el) { el.addEventListener('input', function(e) { state.filter.thesaurus = e.target.value; debouncedThesaurusSearch(); }); el.addEventListener('keypress', function(e) { if (e.key === 'Enter') doThesaurusSearch(); }); }
             el = document.getElementById('admin-search');
             if (el) el.addEventListener('input', function(e) { state.filter.mundart = e.target.value; debouncedSearch(); });
             el = document.getElementById('search-edit-begriff');
@@ -1120,7 +1182,7 @@
         
         function render() {
             var content = document.getElementById('content');
-            var views = { woerterbuch: renderWoerterbuch, reimlexikon: renderReimlexikon, bearbeiten: renderBearbeiten, info: renderInfo, login: renderLogin, admin: renderAdmin };
+            var views = { woerterbuch: renderWoerterbuch, reimlexikon: renderReimlexikon, thesaurus: renderThesaurus, bearbeiten: renderBearbeiten, info: renderInfo, login: renderLogin, admin: renderAdmin };
             content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">?</div>'; })();
             attachEventListeners();
         }
@@ -1129,6 +1191,7 @@
             document.getElementById('mainNav').innerHTML = [
                 { id: 'woerterbuch', label: 'Wörterbuch' },
                 { id: 'reimlexikon', label: 'Reimlexikon' },
+                { id: 'thesaurus', label: 'Thesaurus' },
                 { id: 'bearbeiten', label: 'Mithelfen' },
                 { id: 'info', label: 'Info' },
                 { id: 'admin', label: 'Admin' }
@@ -1143,7 +1206,8 @@
             state.filter.kategorie = '';
             state.filter.wortart = '';
             if (view === 'bearbeiten') { state.isNewEntry = false; state.currentEditWord = null; }
-            if (view === 'reimlexikon') reimResults = { rein: [] };
+            if (view === 'thesaurus') thesaurusResults = null;
+            if (view === 'reimlexikon') reimResults = { rein: [], unrein: [] };
             document.querySelectorAll('.nav-btn').forEach(function(btn) {
                 var match = btn.getAttribute('onclick').match(/'(.+?)'/);
                 btn.classList.toggle('active', match && (match[1] === view || (view === 'login' && match[1] === 'admin')));
