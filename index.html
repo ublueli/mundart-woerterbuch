@@ -589,10 +589,18 @@
                 var searchAss = (entry && entry.reim_assonanz) ? entry.reim_assonanz.toLowerCase().trim() : '';
                 if (!searchReim) return { rein: [], unrein: [] };
                 var pRein = supabaseCall('woerter?select=*&reim=ilike.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200');
+                var pReinPart = supabaseCall('woerter?select=*&nebenform_reim=ilike.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200');
                 var pUnrein = searchAss ? supabaseCall('woerter?select=*&reim_assonanz=eq.' + encodeURIComponent(searchAss) + '&reim=neq.' + encodeURIComponent(searchReim) + '&order=begriff.asc&limit=200') : Promise.resolve([]);
-                return Promise.all([pRein, pUnrein]).then(function(res) {
+                return Promise.all([pRein, pReinPart, pUnrein]).then(function(res) {
                     var f = function(w) { return w.begriff.toLowerCase().trim() !== normalizedSearch; };
-                    return { rein: (res[0] || []).filter(f), unrein: (res[1] || []).filter(f) };
+                    var reinBase = (res[0] || []).filter(f);
+                    var partizipEntries = (res[1] || []).filter(function(w) { return w.nebenform && w.nebenform.toLowerCase().trim() !== normalizedSearch; }).map(function(w) {
+                        return { begriff: w.nebenform, reim: w.nebenform_reim, wortart: 'Verb (Partizip)', synonyme: w.synonyme, bedeutung: w.bedeutung, beispielsatz: w.beispielsatz, bemerkung: 'Partizip von «' + w.begriff + '»', kategorie: w.kategorie };
+                    });
+                    var seen = {}, rein = [];
+                    reinBase.concat(partizipEntries).forEach(function(w) { var k = (w.begriff || '').toLowerCase().trim(); if (!seen[k]) { seen[k] = 1; rein.push(w); } });
+                    rein.sort(function(a, b) { return (a.begriff || '').localeCompare(b.begriff || ''); });
+                    return { rein: rein, unrein: (res[2] || []).filter(f) };
                 });
             });
         }
