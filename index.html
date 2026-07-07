@@ -490,7 +490,11 @@
                 
                 // Bearbeiten-Button
                 content += '<div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid var(--border-color);">';
-                content += '<button class="btn" onclick="editWordFromModal(' + wort.id + ')">✏️ Bearbeiten</button>';
+                if (state.isAdmin) {
+                    content += '<button class="btn" onclick="openAdminInlineEdit(' + wort.id + ')">✏️ Direkt bearbeiten</button>';
+                } else {
+                    content += '<button class="btn" onclick="editWordFromModal(' + wort.id + ')">✏️ Änderung vorschlagen</button>';
+                }
                 content += '</div>';
                 
                 if (similar.length > 0) {
@@ -526,6 +530,56 @@
         function showWordDetailById(id) {
             supabaseCall('woerter?id=eq.' + id).then(function(data) {
                 if (data && data.length > 0) showWordDetail(data[0]);
+            });
+        }
+
+        // --- Admin: direkt bearbeiten (nur wenn eingeloggt) ---
+        function _escVal(s) {
+            return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function refreshCurrentView() {
+            if (state.currentView === 'woerterbuch') { loadPageData(state.currentPage, state.filter).then(render); }
+            else if (state.currentView === 'reimlexikon') { doReimSearch(); }
+            else if (state.currentView === 'thesaurus') { doThesaurusSearch(); }
+            else if (state.currentView === 'admin') { loadPageData(state.currentPage, state.filter).then(render); }
+            else { render(); }
+        }
+
+        function openAdminInlineEdit(id) {
+            if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
+            supabaseCall('woerter?id=eq.' + id).then(function(data) {
+                if (!data || !data.length) return;
+                var w = data[0];
+                var textFields = [['begriff', 'Begriff'], ['reim', 'Reim'], ['wortart', 'Wortart'], ['kategorie', 'Kategorie'], ['nebenform', 'Partizip / Nebenform'], ['nebenform_reim', 'Reim der Nebenform'], ['reim_assonanz', 'Reim-Assonanz']];
+                var areaFields = [['synonyme', 'Synonyme'], ['bedeutung', 'Bedeutung'], ['beispielsatz', 'Beispielsatz'], ['bemerkung', 'Bemerkung']];
+                var c = '<form onsubmit="saveAdminInlineEdit(' + id + ');return false;">';
+                textFields.forEach(function(f) {
+                    c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label><input type="text" id="adm_' + f[0] + '" class="input" value="' + _escVal(w[f[0]]) + '"></div>';
+                });
+                areaFields.forEach(function(f) {
+                    c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label><textarea id="adm_' + f[0] + '" class="input" rows="2">' + _escVal(w[f[0]]) + '</textarea></div>';
+                });
+                c += '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">';
+                c += '<button type="submit" class="btn">💾 Speichern</button>';
+                c += '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="showWordDetailById(' + id + ')">Abbrechen</button>';
+                c += '</div></form>';
+                showModal('✏️ Bearbeiten: ' + (w.begriff || ''), c);
+            });
+        }
+
+        function saveAdminInlineEdit(id) {
+            if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
+            var fields = ['begriff', 'reim', 'wortart', 'kategorie', 'nebenform', 'nebenform_reim', 'reim_assonanz', 'synonyme', 'bedeutung', 'beispielsatz', 'bemerkung'];
+            var data = {};
+            fields.forEach(function(f) { var el = document.getElementById('adm_' + f); if (el) { var v = el.value.trim(); data[f] = (v === '' ? null : v); } });
+            data.updated_at = new Date().toISOString().slice(0, 10);
+            supabaseCall('woerter?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data) }).then(function() {
+                showToast('✓ Gespeichert', 'success');
+                closeModal();
+                refreshCurrentView();
+            }).catch(function(err) {
+                showToast('Fehler beim Speichern', 'error');
             });
         }
         
@@ -595,7 +649,7 @@
                     var f = function(w) { return w.begriff.toLowerCase().trim() !== normalizedSearch; };
                     var reinBase = (res[0] || []).filter(f);
                     var partizipEntries = (res[1] || []).filter(function(w) { return w.nebenform && w.nebenform.toLowerCase().trim() !== normalizedSearch; }).map(function(w) {
-                        return { begriff: w.nebenform, reim: w.nebenform_reim, wortart: 'Verb (Partizip)', synonyme: w.synonyme, bedeutung: w.bedeutung, beispielsatz: w.beispielsatz, bemerkung: 'Partizip von «' + w.begriff + '»', kategorie: w.kategorie };
+                        return { id: w.id, begriff: w.nebenform, reim: w.nebenform_reim, wortart: 'Verb (Partizip)', synonyme: w.synonyme, bedeutung: w.bedeutung, beispielsatz: w.beispielsatz, bemerkung: 'Partizip von «' + w.begriff + '»', kategorie: w.kategorie };
                     });
                     var seen = {}, rein = [];
                     reinBase.concat(partizipEntries).forEach(function(w) { var k = (w.begriff || '').toLowerCase().trim(); if (!seen[k]) { seen[k] = 1; rein.push(w); } });
