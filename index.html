@@ -188,7 +188,6 @@
         var CONFIG = {
             SUPABASE_URL: 'https://owigtnvkqrhclqhfppxf.supabase.co',
             SUPABASE_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im93aWd0bnZrcXJoY2xxaGZwcHhmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA2MjQyOTIsImV4cCI6MjA3NjIwMDI5Mn0.gN0tNzN73oa9Fr-zoFgLGlkat4SypGV5B3bzdZjYFyo',
-            ADMIN_PASSWORD: 'mundart2024',
             ITEMS_PER_PAGE: 50,
             DEBOUNCE_DELAY: 400
         };
@@ -197,6 +196,7 @@
             currentView: 'woerterbuch',
             adminTab: 'freigaben',
             isAdmin: false,
+            accessToken: null,
             currentPageData: [],
             totalCount: 0,
             pendingChanges: [],
@@ -268,7 +268,7 @@
                 method: options.method || 'GET',
                 headers: Object.assign({
                     'apikey': CONFIG.SUPABASE_KEY,
-                    'Authorization': 'Bearer ' + CONFIG.SUPABASE_KEY,
+                    'Authorization': 'Bearer ' + (state.accessToken || CONFIG.SUPABASE_KEY),
                     'Content-Type': 'application/json',
                     'Prefer': options.headers && options.headers['Prefer'] ? options.headers['Prefer'] : 'return=representation'
                 }, options.headers || {}),
@@ -278,6 +278,10 @@
                 if (totalCount) {
                     var match = totalCount.match(/\/(\d+)/);
                     if (match) state.totalCount = parseInt(match[1]);
+                }
+                if ((res.status === 401 || res.status === 403) && state.accessToken) {
+                    state.accessToken = null; state.isAdmin = false;
+                    showToast('Sitzung abgelaufen – bitte neu anmelden', 'error');
                 }
                 if (!res.ok) return res.text().then(function(e) { throw new Error('HTTP ' + res.status + ': ' + e); });
                 if (options.method === 'DELETE' || res.status === 204) return { success: true };
@@ -1114,6 +1118,7 @@
             tabs += '<button class="tab-btn' + (state.adminTab === 'freigaben' ? ' active' : '') + '" onclick="changeAdminTab(\'freigaben\')">Freigaben' + (pendingCount > 0 ? '<span class="pending-badge">' + pendingCount + '</span>' : '') + '</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Tabelle</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
+            tabs += '<button class="tab-btn" onclick="handleLogout()" style="margin-left:auto;">🔒 Abmelden</button>';
             tabs += '</div>';
             if (state.adminTab === 'freigaben') return tabs + renderFreigaben(pendingCount);
             if (state.adminTab === 'tabelle') return tabs + renderAdminTable();
@@ -1213,13 +1218,41 @@
 }
         
         function renderLogin() {
-            return '<div class="login-box"><h2>Admin</h2><form onsubmit="handleLogin(event);return false;"><input type="password" name="password" class="input" placeholder="Passwort" required><button type="submit" class="btn" style="width:100%;margin-top:12px;">Login</button></form></div>';
+            return '<div class="login-box"><h2>Admin-Anmeldung</h2><form onsubmit="handleLogin(event);return false;">'
+                 + '<input type="email" name="email" class="input" placeholder="E-Mail" autocomplete="username" required>'
+                 + '<input type="password" name="password" class="input" style="margin-top:10px;" placeholder="Passwort" autocomplete="current-password" required>'
+                 + '<button type="submit" class="btn" style="width:100%;margin-top:12px;">Anmelden</button>'
+                 + '</form></div>';
         }
-        
+
         function handleLogin(event) {
             event.preventDefault();
-            if (event.target.password.value === CONFIG.ADMIN_PASSWORD) { state.isAdmin = true; changeView('admin'); showToast('Login OK', 'success'); }
-            else showToast('Falsches Passwort', 'error');
+            var email = event.target.email.value.trim();
+            var password = event.target.password.value;
+            showToast('Anmeldung läuft...', 'warning');
+            fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=password', {
+                method: 'POST',
+                headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: email, password: password })
+            }).then(function(res) {
+                return res.json().then(function(body) { return { ok: res.ok, body: body }; });
+            }).then(function(r) {
+                if (r.ok && r.body.access_token) {
+                    state.accessToken = r.body.access_token;
+                    state.isAdmin = true;
+                    changeView('admin');
+                    showToast('Angemeldet als ' + email, 'success');
+                } else {
+                    showToast('Anmeldung fehlgeschlagen', 'error');
+                }
+            }).catch(function() { showToast('Verbindungsfehler', 'error'); });
+        }
+
+        function handleLogout() {
+            state.accessToken = null;
+            state.isAdmin = false;
+            changeView('woerterbuch');
+            showToast('Abgemeldet', 'success');
         }
         
         var debouncedSearch = debounce(function() { state.currentPage = 1; state.filter.buchstabe = ''; loadPageData(1, state.filter).then(render); }, CONFIG.DEBOUNCE_DELAY);
