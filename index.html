@@ -379,10 +379,18 @@
         
         // Lade ALLE Wortarten mit robustem Batch-Loading
         function loadWortarten() {
+            // Schnell: eine einzige Abfrage auf die Sicht mit den eindeutigen Werten
+            return supabaseCall('v_wortarten?select=wortart&order=wortart.asc').then(function(data) {
+                state.wortarten = (data || []).map(function(r) { return r.wortart; }).filter(Boolean);
+                return state.wortarten;
+            }).catch(function() { return loadWortartenAlt(); });
+        }
+
+        function loadWortartenAlt() {
             var allWortarten = [];
             var pageSize = 1000;
             var offset = 0;
-            
+
             function loadBatch() {
                 return supabaseCall('woerter?select=wortart&limit=' + pageSize + '&offset=' + offset).then(function(batch) {
                     if (batch && batch.length > 0) {
@@ -411,10 +419,18 @@
         
         // Lade ALLE Kategorien mit robustem Batch-Loading
         function loadKategorien() {
+            // Schnell: eine einzige Abfrage auf die Sicht mit den eindeutigen Werten
+            return supabaseCall('v_kategorien?select=kategorie&order=kategorie.asc').then(function(data) {
+                state.kategorien = (data || []).map(function(r) { return r.kategorie; }).filter(Boolean);
+                return state.kategorien;
+            }).catch(function() { return loadKategorienAlt(); });
+        }
+
+        function loadKategorienAlt() {
             var allKategorien = [];
             var pageSize = 1000;
             var offset = 0;
-            
+
             function loadBatch() {
                 return supabaseCall('woerter?select=kategorie&limit=' + pageSize + '&offset=' + offset).then(function(batch) {
                     if (batch && batch.length > 0) {
