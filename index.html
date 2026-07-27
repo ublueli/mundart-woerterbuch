@@ -207,7 +207,7 @@
             allWordsLoaded: false,
             isNewEntry: false,
             showUnreineReime: false,
-            filter: { mundart: '', deutsch: '', wortart: '', reim: '', kategorie: '', buchstabe: '', thesaurus: '' },
+            filter: { mundart: '', deutsch: '', wortart: '', reim: '', kategorie: '', buchstabe: '', thesaurus: '', volltext: false },
             searchDebounceTimer: null,
             wortarten: [],
             kategorien: [],
@@ -315,7 +315,11 @@
             var loadLimit = needsClientFilter ? 500 : CONFIG.ITEMS_PER_PAGE;
             var loadOffset = needsClientFilter ? 0 : offset;
             
-            if (filters.mundart && filters.mundart.trim()) queryParts.push('begriff=ilike.*' + encodeURIComponent(filters.mundart.trim()) + '*');
+            if (filters.mundart && filters.mundart.trim()) {
+                var mt = encodeURIComponent(filters.mundart.trim());
+                if (filters.volltext) queryParts.push('or=(begriff.ilike.*' + mt + '*,beispielsatz.ilike.*' + mt + '*,bemerkung.ilike.*' + mt + '*)');
+                else queryParts.push('begriff=ilike.*' + mt + '*');
+            }
             if (filters.deutsch && filters.deutsch.trim()) queryParts.push('synonyme=ilike.*' + encodeURIComponent(filters.deutsch.trim()) + '*');
             if (filters.wortart && filters.wortart !== 'alle') queryParts.push('wortart=eq.' + encodeURIComponent(filters.wortart));
             if (filters.kategorie && filters.kategorie !== 'alle') queryParts.push('kategorie=eq.' + encodeURIComponent(filters.kategorie));
@@ -330,11 +334,23 @@
                 // Clientseitige Filterung für exakte Wortübereinstimmung
                 if (filters.mundart && filters.mundart.trim()) {
                     var searchMundart = filters.mundart.trim().toLowerCase();
-                    results = results.filter(function(w) {
-                        // Exakte Übereinstimmung oder als ganzes Wort im Begriff
-                        var begriff = (w.begriff || '').toLowerCase();
-                        return begriff === searchMundart || containsWholeWord(begriff, searchMundart);
-                    });
+                    if (filters.volltext) {
+                        results = results.filter(function(w) {
+                            var b = (w.begriff || '').toLowerCase();
+                            var bs = (w.beispielsatz || '').toLowerCase();
+                            var bm = (w.bemerkung || '').toLowerCase();
+                            if (b.indexOf(searchMundart) >= 0) { w._match = ''; return true; }
+                            if (bs.indexOf(searchMundart) >= 0) { w._match = 'Beispielsatz'; return true; }
+                            if (bm.indexOf(searchMundart) >= 0) { w._match = 'Bemerkung'; return true; }
+                            return false;
+                        });
+                    } else {
+                        results = results.filter(function(w) {
+                            // Exakte Übereinstimmung oder als ganzes Wort im Begriff
+                            var begriff = (w.begriff || '').toLowerCase();
+                            return begriff === searchMundart || containsWholeWord(begriff, searchMundart);
+                        });
+                    }
                 }
                 
                 if (filters.deutsch && filters.deutsch.trim()) {
@@ -733,10 +749,11 @@
             if (w.synonyme) html += '<div class="card-row"><span class="card-label">Synonyme:</span> ' + w.synonyme + '</div>';
             if (w.bedeutung) html += '<div class="card-row"><span class="card-label">Bedeutung:</span> ' + w.bedeutung + '</div>';
             if (w.kategorie) html += '<div class="card-kategorie">' + w.kategorie + '</div>';
+            if (w._match) html += '<div class="card-row" style="color:var(--text-muted);font-size:12px;margin-top:6px;">🔎 gefunden im ' + w._match + '</div>';
             html += '</div>';
             return html;
         }
-        
+
         // Thesaurus (Mundart -> verwandte Mundartwörter)
         var thesaurusResults = null;
         var thesaurusLoading = false;
@@ -819,6 +836,7 @@
             html += '</select>';
             
             html += '</div>';
+            html += '<label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:13px;color:var(--text-muted);cursor:pointer;"><input type="checkbox" id="search-volltext"' + (state.filter.volltext ? ' checked' : '') + '> auch in Beispielsätzen und Bemerkungen suchen</label>';
             html += '<div class="search-hint">💡 Klicke auf ein Wort um Details und ähnliche Wörter zu sehen</div>';
             html += '<div style="margin-top: 8px; color: var(--text-muted); font-size: 13px;">' + state.totalCount + ' Einträge' + (totalPages > 1 ? ' (Seite ' + state.currentPage + '/' + totalPages + ')' : '') + '</div></div>';
             
@@ -1265,6 +1283,8 @@
             if (el) { el.addEventListener('input', function(e) { state.filter.mundart = e.target.value; debouncedSearch(); }); el.addEventListener('keypress', function(e) { if (e.key === 'Enter') { state.currentPage = 1; loadPageData(1, state.filter).then(render); }}); }
             el = document.getElementById('search-deutsch');
             if (el) el.addEventListener('input', function(e) { state.filter.deutsch = e.target.value; debouncedSearch(); });
+            el = document.getElementById('search-volltext');
+            if (el) el.addEventListener('change', function(e) { state.filter.volltext = e.target.checked; state.currentPage = 1; if (state.filter.mundart && state.filter.mundart.trim()) loadPageData(1, state.filter).then(render); });
             el = document.getElementById('search-reim');
             if (el) { el.addEventListener('input', function(e) { state.filter.reim = e.target.value; debouncedReimSearch(); }); el.addEventListener('keypress', function(e) { if (e.key === 'Enter') doReimSearch(); }); }
             el = document.getElementById('search-thesaurus');
