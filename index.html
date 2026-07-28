@@ -1462,12 +1462,70 @@
             return anders > 0;
         }
 
+        /* Gezielte Schreibvarianten – greift auch bei ganz kurzen Wörtern,
+           weil hier nicht blind verglichen, sondern nur nach unseren eigenen
+           Schreibunterschieden gesucht wird: höt/hüt, nüd/nüt, Hut/Huet. */
+
+        var PRUEF_VOKAL = [
+            ['ö','ü'], ['ü','ö'], ['e','i'], ['i','e'], ['o','u'], ['u','o'], ['ä','e'], ['e','ä'],
+            ['u','ue'], ['ue','u'], ['ü','üe'], ['üe','ü'], ['i','ie'], ['ie','i'],
+            ['i','ii'], ['ii','i'], ['u','uu'], ['uu','u'], ['a','aa'], ['aa','a'],
+            ['e','ee'], ['ee','e'], ['o','oo'], ['oo','o'], ['ö','öö'], ['öö','ö'], ['ä','ää'], ['ää','ä'],
+            ['y','ii'], ['y','i'], ['eu','öi'], ['äu','öi']
+        ];
+        var PRUEF_AUSLAUT = { 'd':'t', 't':'d', 'g':'k', 'k':'g', 'b':'p', 'p':'b' };
+
+        // Ein Schritt: alle Wörter, die sich durch EINE unserer Änderungen ergeben
+        function pruefEinSchritt(x) {
+            var r = [];
+            PRUEF_VOKAL.forEach(function(p) {
+                var i = -1;
+                while ((i = x.indexOf(p[0], i + 1)) >= 0) r.push(x.slice(0, i) + p[1] + x.slice(i + p[0].length));
+            });
+            var le = x.slice(-1);
+            if (PRUEF_AUSLAUT[le]) r.push(x.slice(0, -1) + PRUEF_AUSLAUT[le]);   // nüd → nüt
+            return r;
+        }
+
+        // Endungen sind schwächere Kandidaten und kommen erst zum Schluss
+        function pruefEndungSchritt(x) {
+            var r = [x + 'e'];
+            if (x.slice(-1) === 'e') r.push(x.slice(0, -1));
+            return r;
+        }
+
+        function pruefVariantenTreffer(w) {
+            var ges = {}, i;
+            var stufe1 = pruefEinSchritt(w);
+            for (i = 0; i < stufe1.length; i++) if (stufe1[i] !== w && pruefBekannt.has(stufe1[i])) return stufe1[i];
+            var stufe2 = [];
+            stufe1.forEach(function(v) { pruefEinSchritt(v).forEach(function(v2) { if (!ges[v2]) { ges[v2] = 1; stufe2.push(v2); } }); });
+            for (i = 0; i < stufe2.length; i++) if (stufe2[i] !== w && pruefBekannt.has(stufe2[i])) return stufe2[i];
+            var stufe3 = pruefEndungSchritt(w);
+            stufe1.forEach(function(v) { pruefEndungSchritt(v).forEach(function(v2) { stufe3.push(v2); }); });
+            for (i = 0; i < stufe3.length; i++) if (stufe3[i] !== w && pruefBekannt.has(stufe3[i])) return stufe3[i];
+            return null;
+        }
+
+        function pruefGrossWie(vorlage, wort) {
+            if (vorlage.charAt(0) === vorlage.charAt(0).toUpperCase() && vorlage.charAt(0) !== vorlage.charAt(0).toLowerCase())
+                return wort.charAt(0).toUpperCase() + wort.slice(1);
+            return wort;
+        }
+
         // Bester Vorschlag für ein unbekanntes Wort, oder null
         function pruefAehnlich(wort) {
             if (!pruefIndex) return null;
             var w = wort.toLowerCase().replace(/^[-'’]+|[-'’]+$/g, '');
-            if (w.length < 4) return null;                       // zu kurz, zu viele Zufallstreffer
-            var max = w.length <= 4 ? 1 : 2;                     // ganz kurze Wörter nur mit einem Unterschied
+            if (w.length < 3) return null;
+
+            // 1. Gezielte Schreibvarianten – auch bei drei Buchstaben verlässlich
+            var treffer = pruefVariantenTreffer(w);
+            if (treffer) return { vorschlag: pruefGrossWie(wort, treffer), abstand: 1 };
+
+            // 2. Allgemeiner Abstandsvergleich – erst ab fünf Buchstaben, sonst zu viel Zufall
+            if (w.length < 5) return null;
+            var max = 2;
             var beste = null;
             for (var L = w.length - max; L <= w.length + max; L++) {
                 var liste = pruefIndex[L];
@@ -1482,11 +1540,7 @@
                 }
             }
             if (!beste) return null;
-            // Grossschreibung des Originals übernehmen
-            var v = beste.wort;
-            if (wort.charAt(0) === wort.charAt(0).toUpperCase() && wort.charAt(0) !== wort.charAt(0).toLowerCase())
-                v = v.charAt(0).toUpperCase() + v.slice(1);
-            return { vorschlag: v, abstand: beste.abstand };
+            return { vorschlag: pruefGrossWie(wort, beste.wort), abstand: beste.abstand };
         }
 
         // «Nein, das ist ein eigenes Wort» – ab jetzt als neues Wort führen
