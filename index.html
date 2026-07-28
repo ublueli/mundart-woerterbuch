@@ -692,7 +692,9 @@
             data.updated_at = new Date().toISOString().slice(0, 10);
             supabaseCall('woerter?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data) }).then(function() {
                 showToast('✓ Gespeichert', 'success');
+                pruefMerken(data.begriff, data.nebenform);
                 closeModal();
+                if (pruefNachfuehren()) return;
                 refreshCurrentView();
             }).catch(function(err) {
                 showToast('Fehler beim Speichern', 'error');
@@ -1408,10 +1410,10 @@
             return batch().then(function(s) { pruefBekannt = s; return s; });
         }
 
-        function pruefText() {
+        function pruefText(leise) {
             var txt = state.pruefText || '';
-            if (!txt.trim()) { showToast('Bitte zuerst einen Text einfügen', 'warning'); return; }
-            showToast('Prüfe...', 'warning');
+            if (!txt.trim()) { if (!leise) showToast('Bitte zuerst einen Text einfügen', 'warning'); return; }
+            if (!leise) showToast('Prüfe...', 'warning');
             pruefLadeWortschatz().then(function(bekannt) {
                 var zeilen = txt.split('\n');
                 var funde = [];
@@ -1449,7 +1451,7 @@
                 state.pruefErgebnis = { html: html, regie: regieZeilen };
                 state.adminTab = 'pruefen';
                 render();
-                showToast(funde.length + ' Fundstellen', funde.length ? 'warning' : 'success');
+                if (!leise) showToast(funde.length + ' Fundstellen', funde.length ? 'warning' : 'success');
             }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
         }
 
@@ -1776,6 +1778,15 @@
             });
         }
 
+        /* ---- In welcher Sprache welches Feld geschrieben wird ---- */
+        var KI_SPRACHREGEL =
+            'SPRACHE DER FELDER – das ist streng zu beachten:\n'
+          + '- In MUNDART geschrieben werden nur: begriff, nebenform, beispielsatz.\n'
+          + '- In HOCHDEUTSCH geschrieben werden: bedeutung, bemerkung, synonyme, wortart, kategorie.\n'
+          + '  Die Bemerkung ist ein redaktioneller Kommentar und steht IMMER in Hochdeutsch, nie in Mundart. '
+          + 'Zitierte Mundartwendungen darin stehen in «Guillemets» und dürfen Mundart sein.\n'
+          + '- reim und nebenform_reim sind blosse Lautfolgen und folgen der Mundartschreibung.\n\n';
+
         /* ---- KI füllt alle Felder eines Wortes ---- */
         function kiFelderFuellen(begriff, zielId) {
             if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Einstellungen', 'error'); return; }
@@ -1787,6 +1798,7 @@
               + '\n\nAUFGABE: Für das vorgegebene Mundartwort füllst du alle Wörterbuchfelder aus. '
               + 'Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne weiteren Text, mit genau diesen Schlüsseln:\n'
               + '{"begriff":"","reim":"","wortart":"","synonyme":"","bedeutung":"","beispielsatz":"","bemerkung":"","kategorie":"","nebenform":"","nebenform_reim":""}\n\n'
+              + KI_SPRACHREGEL
               + 'FELDREGELN:\n'
               + '- begriff: das Stichwort in unserer Schreibweise (Grundform).\n'
               + '- reim: ab dem betonten Vokal bis Wortende, ohne die Anlautkonsonanten dieser Silbe. Beispiele: Cherze→erze, Chübel→übel, bringe→inge, grüesse→üesse, noogoh→oh.\n'
@@ -1888,6 +1900,7 @@
               + 'Unter «felder» stehen NUR die Felder, die du wirklich änderst, mit dem vollständigen neuen Inhalt. '
               + 'Mögliche Schlüssel: ' + ADM_FELDER.join(', ') + '. '
               + 'Ändere nichts, wonach nicht gefragt wurde. Wenn du nur eine Auskunft gibst, lass «felder» leer.\n\n'
+              + KI_SPRACHREGEL
               + 'FELDREGELN:\n'
               + '- reim: ab dem betonten Vokal bis Wortende, ohne die Anlautkonsonanten dieser Silbe (Cherze→erze, bringe→inge).\n'
               + '- synonyme: HOCHDEUTSCHE Entsprechungen, kommagetrennt.\n'
@@ -2298,10 +2311,29 @@
             }
             supabaseCall('woerter', { method: 'POST', body: JSON.stringify(d) }).then(function() {
                 showToast('✓ «' + d.begriff + '» aufgenommen', 'success');
-                if (pruefBekannt) pruefBekannt.add(d.begriff.toLowerCase());
+                pruefMerken(d.begriff, d.nebenform);
                 closeModal();
-                loadTotalCount().then(function(){ render(); });
+                loadTotalCount().then(function(){ if (!pruefNachfuehren()) render(); });
             }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
+        }
+
+        // Neu aufgenommenes Wort sofort im Prüf-Wortschatz führen
+        function pruefMerken(begriff, nebenform) {
+            if (!pruefBekannt) return;
+            [begriff, nebenform].forEach(function(w) {
+                if (!w) return;
+                String(w).split(/[,;/]/).forEach(function(t) {
+                    t = t.trim().toLowerCase();
+                    if (t) pruefBekannt.add(t);
+                });
+            });
+        }
+
+        // Prüf-Ergebnis still neu rechnen, damit erledigte Fundstellen verschwinden
+        function pruefNachfuehren() {
+            if (!state.pruefErgebnis || !(state.pruefText || '').trim()) return false;
+            pruefText(true);
+            return true;
         }
 
 
