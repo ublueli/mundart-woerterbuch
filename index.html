@@ -675,7 +675,12 @@
                 c += '<button type="submit" class="btn">💾 Speichern</button>';
                 c += '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="showWordDetailById(' + id + ')">Abbrechen</button>';
                 c += '</div></form>';
+                c += admChatBlockHtml();
+                state.admChat = []; state.admChatLaeuft = false;
+                state.admEditId = id;
                 showModal('✏️ Bearbeiten: ' + (w.begriff || ''), c);
+                admChatRender();
+                admUebertragAnbieten();
             });
         }
 
@@ -1801,7 +1806,137 @@
                     if (el && o[f] != null && String(o[f]).trim() !== '') el.value = o[f];
                 });
                 showToast('✓ Felder ausgefüllt – bitte prüfen', 'success');
+                admChatMerken('assistant', 'Felder ausgefüllt für «' + begriff + '».');
             }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        /* ---- Gespräch über den offenen Eintrag ---- */
+
+        var ADM_FELDER = ['begriff','reim','wortart','kategorie','nebenform','nebenform_reim',
+                          'synonyme','bedeutung','beispielsatz','bemerkung'];
+
+        function admFelderLesen() {
+            var d = {};
+            ADM_FELDER.forEach(function(f) {
+                var el = document.getElementById('adm_' + f);
+                d[f] = el ? el.value.trim() : '';
+            });
+            return d;
+        }
+
+        function admChatMerken(rolle, text) {
+            state.admChat = state.admChat || [];
+            state.admChat.push({ role: rolle, content: text });
+            admChatRender();
+        }
+
+        function admChatBlockHtml() {
+            var aus = !kiBereit();
+            var h = '<div style="margin-top:18px;border-top:1px solid var(--border-color);padding-top:14px;">';
+            h += '<label class="card-label" style="display:block;margin-bottom:6px;">💬 Mit der KI nachbessern</label>';
+            h += '<div id="adm_chat_log" style="max-height:220px;overflow:auto;margin-bottom:8px;"></div>';
+            h += '<textarea id="adm_chat_eingabe" class="input" rows="2" placeholder="z. B. «verbüüge heisst auch: sich vor Publikum verbeugen – bitte ergänzen»"'
+               + (aus ? ' disabled' : '') + '></textarea>';
+            h += '<div class="wz-row" style="margin-top:8px;">'
+               + '<button type="button" class="btn" onclick="admChatSenden()"' + (aus ? ' disabled title="Kein API-Schlüssel"' : '') + '>Absenden</button>'
+               + '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="admChatLeeren()">Gespräch löschen</button>'
+               + '<span class="wz-muted">Die KI ändert nur die Felder, die sie nennt. Du kannst alles nachträglich von Hand überschreiben.</span></div>';
+            h += '</div>';
+            return h;
+        }
+
+        function admChatRender() {
+            var box = document.getElementById('adm_chat_log');
+            if (!box) return;
+            var v = state.admChat || [];
+            if (!v.length) { box.innerHTML = '<div class="wz-muted">Noch kein Gespräch. Sag der KI, was fehlt oder falsch ist.</div>'; return; }
+            var h = '';
+            v.forEach(function(m) {
+                var ich = m.role === 'user';
+                h += '<div style="margin-bottom:8px;padding:7px 10px;border-radius:8px;font-size:13px;'
+                   + (ich ? 'background:var(--bg-tertiary);' : 'background:var(--bg-secondary);border:1px solid var(--border-color);')
+                   + '"><b style="color:var(--accent-color);">' + (ich ? 'Du' : 'KI') + '</b><br>'
+                   + kiMarkdown(m.content) + '</div>';
+            });
+            if (state.admChatLaeuft) h += '<div class="wz-muted">KI denkt nach…</div>';
+            box.innerHTML = h;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function admChatLeeren() {
+            state.admChat = [];
+            admChatRender();
+        }
+
+        function admChatSenden() {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            var el = document.getElementById('adm_chat_eingabe');
+            var frage = el ? el.value.trim() : '';
+            if (!frage) { showToast('Bitte etwas eingeben', 'warning'); return; }
+            if (el) el.value = '';
+            state.admChat = state.admChat || [];
+            state.admChat.push({ role: 'user', content: frage });
+            state.admChatLaeuft = true;
+            admChatRender();
+
+            var kats = (state.kategorien || []).join('; ');
+            var sys = kiRegelPrompt()
+              + '\n\nROLLE: Du arbeitest mit dem Redaktor an EINEM Wörterbucheintrag. '
+              + 'Er sagt dir, was fehlt, falsch ist oder anders lauten soll. Du überarbeitest daraufhin die Felder.\n\n'
+              + 'ANTWORTFORM: Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne weiteren Text:\n'
+              + '{"antwort":"kurze Antwort an den Redaktor, ein bis drei Sätze, Fliesstext","felder":{}}\n'
+              + 'Unter «felder» stehen NUR die Felder, die du wirklich änderst, mit dem vollständigen neuen Inhalt. '
+              + 'Mögliche Schlüssel: ' + ADM_FELDER.join(', ') + '. '
+              + 'Ändere nichts, wonach nicht gefragt wurde. Wenn du nur eine Auskunft gibst, lass «felder» leer.\n\n'
+              + 'FELDREGELN:\n'
+              + '- reim: ab dem betonten Vokal bis Wortende, ohne die Anlautkonsonanten dieser Silbe (Cherze→erze, bringe→inge).\n'
+              + '- synonyme: HOCHDEUTSCHE Entsprechungen, kommagetrennt.\n'
+              + '- bedeutung: bei mehreren Bedeutungen als «1. … 2. …» nummerieren, jede knapp und klar.\n'
+              + '- beispielsatz: bei mehreren Bedeutungen für jede einen Satz, gleich nummeriert.\n'
+              + '- kategorie: genau eine aus dieser Liste: ' + kats + '\n'
+              + '- nebenform: bei Verben das Partizip II, mit nebenform_reim.\n'
+              + 'Der Redaktor ist Fachmann. Wenn er dir eine Bedeutung nennt, die du nicht kennst, nimm sie auf, statt zu widersprechen.';
+
+            var stand = admFelderLesen();
+            var standText = ADM_FELDER.map(function(f) { return f + ': ' + (stand[f] || '—'); }).join('\n');
+
+            var msgs = [];
+            state.admChat.slice(-10).forEach(function(m) { msgs.push({ role: m.role, content: m.content }); });
+            msgs[msgs.length - 1] = {
+                role: 'user',
+                content: 'AKTUELLER STAND DES EINTRAGS:\n' + standText + '\n\n---\nANWEISUNG DES REDAKTORS:\n' + frage
+            };
+
+            kiFrageVerlauf(sys, msgs, 1600, true).then(function(a) {
+                var o = kiJson(a);
+                state.admChatLaeuft = false;
+                if (!o) {
+                    state.admChat.push({ role: 'assistant', content: a || '(keine Antwort)' });
+                    admChatRender();
+                    return;
+                }
+                var geaendert = [];
+                var f = o.felder || {};
+                ADM_FELDER.forEach(function(n) {
+                    if (f[n] == null) return;
+                    var neu = String(f[n]);
+                    var elf = document.getElementById('adm_' + n);
+                    if (!elf || elf.value.trim() === neu.trim()) return;
+                    elf.value = neu;
+                    elf.style.background = 'rgba(255,215,0,.18)';
+                    (function(x) { setTimeout(function() { x.style.background = ''; }, 4000); })(elf);
+                    geaendert.push(n);
+                });
+                var txt = o.antwort || '';
+                if (geaendert.length) txt += '\n\n**Geändert:** ' + geaendert.join(', ');
+                else txt += '\n\n*(keine Felder geändert)*';
+                state.admChat.push({ role: 'assistant', content: txt });
+                admChatRender();
+            }).catch(function(e) {
+                state.admChatLaeuft = false;
+                state.admChat.push({ role: 'assistant', content: '⚠️ ' + e.message });
+                admChatRender();
+            });
         }
 
         /* ---- Korrigierten Text aus der KI-Tabelle erzeugen ---- */
@@ -1993,7 +2128,10 @@
             felder.forEach(function(f) {
                 var v = (f[0] === 'begriff' && vorgabe) ? vorgabe : '';
                 c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label>'
-                   + '<input type="text" id="adm_' + f[0] + '" class="input" value="' + escHtml(v) + '"></div>';
+                   + '<input type="text" id="adm_' + f[0] + '" class="input" value="' + escHtml(v) + '"'
+                   + (f[0] === 'begriff' ? ' oninput="admDubletteSpaet()" autocomplete="off"' : '') + '>'
+                   + (f[0] === 'begriff' ? '<div id="adm_dublette" style="margin-top:6px;"></div>' : '')
+                   + '</div>';
             });
             flaechen.forEach(function(f) {
                 c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label>'
@@ -2003,15 +2141,153 @@
                + '<button type="submit" class="btn">💾 Ins Wörterbuch aufnehmen</button>'
                + '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal()">Abbrechen</button>'
                + '</div></form>';
+            c += admChatBlockHtml();
+            state.admChat = []; state.admChatLaeuft = false;
+            state.admEditId = null;
             showModal('➕ Neues Wort' + (vorgabe ? ': ' + escHtml(vorgabe) : ''), c);
+            admChatRender();
+            if (vorgabe) admDubletteHinweis();
         }
 
-        function adminNeuSpeichern() {
+
+        /* ---- Dublettenprüfung ---- */
+
+        var admDublTimer = null, admDublLetzte = null;
+
+        function admDublSauber(s) {
+            return (s || '').trim().replace(/["(),*]/g, '');
+        }
+
+        function admDublettenSuche(begriff) {
+            var b = admDublSauber(begriff);
+            if (!b) return Promise.resolve([]);
+            var q = encodeURIComponent(b);
+            return supabaseCall('woerter?select=id,begriff,wortart,bedeutung,nebenform'
+                    + '&or=(begriff.ilike.' + q + ',nebenform.ilike.' + q + ')&limit=8')
+                .then(function(d) {
+                    d = d || [];
+                    if (state.admEditId) d = d.filter(function(t) { return String(t.id) !== String(state.admEditId); });
+                    return d;
+                }).catch(function() { return []; });
+        }
+
+        function admDubletteSpaet() {
+            if (admDublTimer) clearTimeout(admDublTimer);
+            admDublTimer = setTimeout(admDubletteHinweis, 450);
+        }
+
+        function admDubletteHinweis() {
+            var box = document.getElementById('adm_dublette');
+            if (!box) return;
+            var el = document.getElementById('adm_begriff');
+            var b = el ? el.value.trim() : '';
+            if (b.length < 2) { box.innerHTML = ''; admDublLetzte = null; return; }
+            admDublLetzte = b;
+            admDublettenSuche(b).then(function(tr) {
+                if (admDublLetzte !== b) return;               // Eingabe hat sich weiterbewegt
+                var box2 = document.getElementById('adm_dublette');
+                if (!box2) return;
+                box2.innerHTML = tr.length ? admDubletteHtml(tr, b, false) : '';
+            });
+        }
+
+        function admDubletteHtml(treffer, begriff, hart) {
+            var lb = begriff.toLowerCase();
+            var h = '<div style="border:1px solid ' + (hart ? '#d97706' : 'var(--border-color)')
+                  + ';background:' + (hart ? 'rgba(217,119,6,.12)' : 'var(--bg-tertiary)')
+                  + ';border-radius:8px;padding:10px;font-size:13px;">';
+            h += '<b>' + (hart ? '⚠️ Nicht gespeichert – das gibt es schon:' : 'Schon im Wörterbuch:') + '</b>';
+            treffer.forEach(function(t) {
+                var alsNeben = (t.begriff || '').toLowerCase() !== lb;
+                h += '<div style="margin-top:7px;">'
+                   + '<b>' + escHtml(t.begriff || '') + '</b>'
+                   + (t.wortart ? ' <span class="wz-muted">(' + escHtml(t.wortart) + ')</span>' : '')
+                   + (alsNeben ? ' <span class="wz-muted">– «' + escHtml(begriff) + '» ist dort als Nebenform erfasst</span>' : '')
+                   + (t.bedeutung ? '<br><span class="wz-muted">' + escHtml(String(t.bedeutung).slice(0, 110)) + '</span>' : '')
+                   + ' <button type="button" class="btn" style="padding:2px 9px;font-size:12px;margin-left:4px;" '
+                   + 'onclick="admZuEintrag(' + t.id + ')">öffnen und ergänzen</button>'
+                   + '</div>';
+            });
+            if (hart) {
+                h += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">'
+                   + '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" '
+                   + 'onclick="adminNeuSpeichern(true)">Trotzdem als eigenen Eintrag aufnehmen</button></div>';
+            }
+            h += '</div>';
+            return h;
+        }
+
+        function admZuEintrag(id) {
+            state.admUebertrag = admFelderLesen();
+            openAdminInlineEdit(id);
+        }
+
+        // Was im Fenster «Neues Wort» schon geschrieben stand, in den bestehenden Eintrag hinüberretten
+        function admUebertragAnbieten() {
+            var u = state.admUebertrag;
+            state.admUebertrag = null;
+            if (!u) return;
+            var offen = [];
+            ADM_FELDER.forEach(function(n) {
+                if (n === 'begriff') return;
+                var neu = (u[n] || '').trim();
+                if (!neu) return;
+                var el = document.getElementById('adm_' + n);
+                if (!el) return;
+                if (el.value.trim() === neu) return;
+                offen.push([n, neu, el.value.trim() === '']);
+            });
+            if (!offen.length) return;
+            var leer = offen.filter(function(o) { return o[2]; });
+            var box = document.getElementById('adm_dublette') || document.getElementById('adm_chat_log');
+            var h = '<div id="adm_uebertrag" style="border:1px solid var(--border-color);background:var(--bg-tertiary);border-radius:8px;padding:10px;margin-bottom:12px;font-size:13px;">'
+                  + '<b>Aus dem Fenster «Neues Wort» mitgebracht</b>'
+                  + '<div class="wz-muted" style="margin:4px 0 8px;">' + offen.map(function(o) { return o[0]; }).join(', ')
+                  + (leer.length ? ' – davon hier noch leer: ' + leer.map(function(o) { return o[0]; }).join(', ') : '')
+                  + '</div>'
+                  + '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+                  + (leer.length ? '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;" onclick="admUebertragFuellen(true)">Nur leere Felder füllen</button>' : '')
+                  + '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);" onclick="admUebertragFuellen(false)">Alles übernehmen</button>'
+                  + '<button type="button" class="btn" style="padding:3px 10px;font-size:12px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);" onclick="var x=document.getElementById(\'adm_uebertrag\');if(x)x.remove();">Verwerfen</button>'
+                  + '</div></div>';
+            state.admUebertragDaten = offen;
+            var ziel = document.querySelector('#modal .modal-content form') || box;
+            if (ziel && ziel.insertAdjacentHTML) ziel.insertAdjacentHTML('afterbegin', h);
+        }
+
+        function admUebertragFuellen(nurLeere) {
+            (state.admUebertragDaten || []).forEach(function(o) {
+                if (nurLeere && !o[2]) return;
+                var el = document.getElementById('adm_' + o[0]);
+                if (!el) return;
+                el.value = o[1];
+                el.style.background = 'rgba(255,215,0,.18)';
+                (function(x) { setTimeout(function() { x.style.background = ''; }, 4000); })(el);
+            });
+            var x = document.getElementById('adm_uebertrag');
+            if (x) x.remove();
+            showToast('Übernommen – bitte prüfen und speichern', 'success');
+        }
+
+        function adminNeuSpeichern(trotzdem) {
             if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
             var f = ['begriff','reim','wortart','kategorie','nebenform','nebenform_reim','synonyme','bedeutung','beispielsatz','bemerkung'];
             var d = {};
             f.forEach(function(n) { var el = document.getElementById('adm_' + n); if (el) { var v = el.value.trim(); d[n] = v === '' ? null : v; } });
             if (!d.begriff) { showToast('Der Begriff fehlt', 'warning'); return; }
+            if (!trotzdem) {
+                admDublettenSuche(d.begriff).then(function(tr) {
+                    if (!tr.length) { admNeuWirklichSpeichern(d); return; }
+                    var box = document.getElementById('adm_dublette');
+                    if (box) { box.innerHTML = admDubletteHtml(tr, d.begriff, true); box.scrollIntoView({ block: 'center' }); }
+                    showToast('«' + d.begriff + '» gibt es bereits', 'warning');
+                });
+                return;
+            }
+            admNeuWirklichSpeichern(d);
+        }
+
+        function admNeuWirklichSpeichern(d) {
             var heute = new Date().toISOString().slice(0,10);
             d.created_at = heute; d.updated_at = heute;
             if (d.reim && !d.reim_assonanz) {
