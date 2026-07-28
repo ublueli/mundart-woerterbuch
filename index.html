@@ -165,6 +165,58 @@
             .edit-nav-buttons .btn-small { padding: 5px 8px; font-size: 12px; }
             .edit-nav-info { font-size: 12px; }
         }
+
+        /* ===== Werkzeuge (Prüfen / KI / Werkstatt) ===== */
+        .wz-wrap { display: flex; flex-direction: column; gap: 14px; }
+        .wz-box { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; }
+        .wz-box h3 { font-size: 15px; margin-bottom: 10px; color: var(--accent-color); }
+        .wz-ta { width: 100%; min-height: 190px; padding: 12px; border: 2px solid var(--border-color); border-radius: 6px;
+                 font-family: inherit; font-size: 14px; line-height: 1.6; background: var(--bg-secondary); color: var(--text-primary); resize: vertical; }
+        .wz-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+        .wz-muted { color: var(--text-muted); font-size: 13px; }
+        .wz-result { line-height: 2.1; font-size: 15px; padding: 12px; background: var(--bg-tertiary); border-radius: 6px; white-space: pre-wrap; }
+        .wz-hit { border-radius: 4px; padding: 1px 4px; cursor: pointer; border-bottom: 2px solid transparent; }
+        .wz-fehler   { background: #ffd9d9; color: #8a1c1c; border-bottom-color: #c62828; }
+        .wz-angleich { background: #fff0cc; color: #7a5200; border-bottom-color: #e0a800; }
+        .wz-neu      { background: #e2efda; color: #2f5d2f; border-bottom-color: #4c8b4c; }
+        [data-theme="dark"] .wz-fehler   { background: #5a2020; color: #ffc9c9; }
+        [data-theme="dark"] .wz-angleich { background: #5a4a12; color: #ffe6a0; }
+        [data-theme="dark"] .wz-neu      { background: #23421f; color: #cbe8c0; }
+        .wz-legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+        .wz-legende span b { padding: 1px 6px; border-radius: 4px; }
+        .wz-liste { margin-top: 12px; }
+        .wz-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid var(--border-color); flex-wrap: wrap; }
+        .wz-item:last-child { border-bottom: none; }
+        .wz-item-w { font-weight: 600; min-width: 120px; }
+        .wz-item-m { flex: 1; font-size: 13px; color: var(--text-secondary); min-width: 180px; }
+        .wz-mini { padding: 4px 10px; font-size: 12px; border-radius: 5px; border: none; cursor: pointer; background: var(--accent-color); color: #fff; }
+        .wz-mini.grau { background: var(--bg-tertiary); color: var(--text-primary); }
+        .wz-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+        .wz-b-f { background: #ffd9d9; color: #8a1c1c; }
+        .wz-b-a { background: #fff0cc; color: #7a5200; }
+        .wz-b-n { background: #e2efda; color: #2f5d2f; }
+        /* Werkstatt */
+        .wk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 900px) { .wk-grid { grid-template-columns: 1fr; } }
+        .wk-src { min-height: 340px; padding: 12px; border: 2px solid var(--border-color); border-radius: 6px;
+                  background: var(--bg-secondary); line-height: 1.8; font-size: 15px; overflow-y: auto; max-height: 60vh; }
+        .wk-w { cursor: context-menu; border-radius: 3px; padding: 0 1px; }
+        .wk-w:hover { background: var(--bg-tertiary); }
+        .wk-w.gefunden { border-bottom: 2px dotted var(--accent-color); }
+        .wk-ta { min-height: 340px; max-height: 60vh; }
+        .wk-pop { position: fixed; z-index: 2000; background: var(--bg-secondary); border: 1px solid var(--border-color);
+                  border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.22); padding: 12px; width: 320px; max-height: 60vh; overflow-y: auto; }
+        .wk-pop h4 { font-size: 14px; margin-bottom: 8px; color: var(--accent-color); }
+        .wk-tref { padding: 7px 8px; border-radius: 5px; cursor: pointer; border-bottom: 1px solid var(--border-color); }
+        .wk-tref:hover { background: var(--bg-tertiary); }
+        .wk-tref:last-child { border-bottom: none; }
+        .wk-tref b { color: var(--text-primary); }
+        .wk-tref small { color: var(--text-muted); display: block; margin-top: 2px; }
+        .ki-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+        .ki-dot { width: 9px; height: 9px; border-radius: 50%; background: #d0d0d0; display: inline-block; }
+        .ki-dot.on { background: #10b981; }
+        .ki-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        @media (max-width: 700px) { .ki-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
@@ -213,7 +265,23 @@
             kategorien: [],
             isLoading: false,
             wortDesTages: null,
-            darkMode: false
+            darkMode: false,
+            // Werkzeuge
+            pruefText: '',
+            pruefRegie: true,
+            pruefErgebnis: null,
+            pruefKiText: '',
+            kiAntwort: '',
+            kiLaeuft: false,
+            wkQuelle: '',
+            wkZiel: '',
+            wkSprache: 'Deutsch',
+            ki: {
+                key: localStorage.getItem('mw-api-key') || '',
+                modell: localStorage.getItem('mw-modell') || 'claude-sonnet-4-5',
+                modelle: [],
+                websuche: localStorage.getItem('mw-websuche') === '1'
+            }
         };
         
         function toggleTheme() {
@@ -1145,18 +1213,916 @@
             }
         }
         
+
+        /* ═══════════════════════════════════════════════════════════
+           REGEL-MASCHINE  (Schreibregeln Mundart-Wörterbuch)
+           ═══════════════════════════════════════════════════════════ */
+
+        var REGEL_Y_OK = ('baby,party,partys,typ,type,typisch,typische,typischer,typisches,typischi,typischt,typischst,'
+          + 'pyjama,psycho,psychofreak,psychiater,psychisch,psychologe,psychologin,easy,gay,groggy,groovy,happy,heavy,horny,'
+          + 'hype,hyper,johnny,kinky,lady,ladys,nymphe,oberjockey,jockey,okay,ready,tyrann,tyranne,toblerone,larry,'
+          + 'sympathisch,sympathie,system,systeme,physik,physisch,analyse,analysiere,hobby,city,story,style,spray,yoga,'
+          + 'joghurt,handy,handys,lyrik,lyrisch,mythos,rhythmus,symbol,synonym,synonyme,asyl,crazy,sexy,money,hockey,'
+          + 'derby,curry,whisky,yeti,yacht,zylinder,dynamik,dynamisch,hygiene,hymne,pyramide,synagoge,syrup,mayonnaise,'
+          + 'recycling,royal,layout,playmobil,play,replay,display,hydrant,physio,olympia,olympisch,ayurveda,mayor').split(',');
+
+        var REGEL_ANGLEICH = {
+            'ech':'ich','esch':'isch','met':'mit','mech':'mich','sech':'sich','be':'bi','send':'sind','hed':'het',
+            'om':'um','ond':'und','god':'goht','öbis':'öppis','gled':'gleed','drengend':'dringend','senn':'sinn',
+            'entscholdigong':'Entschuldigung','wösseschaft':'Wüsseschaft','öberchome':'überchome','aso':'also',
+            'emol':'emal','frölein':'Fröilein','öber':'öpper','wett':'wott','chond':'chunt','vel':'vil',
+            'villecht':'villicht','vielecht':'villicht','sösch':'söscht','irged':'irgend','hötzotags':'hüttzutags',
+            'nor':'nur','ehne':'öich','euch':'öich','euer':'öier','euchi':'öiri','euchne':'öichne','üchne':'öichne',
+            'eus':'öis','euse':'öise','eusi':'öisi','eues':'öies','ned':'nid','nöd':'nid','symphatisch':'sympathisch',
+            'zsäme':'zäme','gsy':'gsii','gsyn':'gsii','zyt':'ziit','wyt':'wiit'
+        };
+
+        var REGEL_HOCHDEUTSCH = { 'nicht':'nid','auch':'au','sie':'si','ist':'isch','nichts':'nüt',
+            'etwas':'öppis','jemand':'öpper','heute':'hüt','immer':null };
+
+        var REGEL_VORSILBEN = ['ver','be','ge','ent','zer','er','uf','us','ab','aa','ii','vor','über','um','nach','zue','g','b'];
+
+        function regelIstLehnY(w) { return REGEL_Y_OK.indexOf(w.toLowerCase()) >= 0; }
+
+        function regelKasus(orig, neu) {
+            if (!orig || !neu) return neu;
+            var c = orig.charAt(0);
+            if (c === c.toUpperCase() && c !== c.toLowerCase()) return neu.charAt(0).toUpperCase() + neu.slice(1);
+            return neu;
+        }
+
+        // «scht/schp» am Wortanfang oder direkt nach einer Vorsilbe -> st/sp
+        function regelSchtAmAnfang(w) {
+            var lw = w.toLowerCase();
+            var pre = ['', 'g', 'b', 'be', 'ge', 'ver', 'zer', 'ent', 'er', 'uf', 'us', 'ab', 'aa', 'ii', 'vor', 'über', 'um'];
+            for (var i = 0; i < pre.length; i++) {
+                var p = pre[i];
+                if (lw.indexOf(p + 'sch') === 0 && /[tp]/.test(lw.charAt(p.length + 3))) {
+                    var sch = w.substr(p.length, 3);
+                    var ers = (sch.charAt(0) === sch.charAt(0).toUpperCase() && sch.charAt(0) !== sch.charAt(0).toLowerCase()) ? 'S' : 's';
+                    return w.substr(0, p.length) + ers + w.substr(p.length + 3);
+                }
+            }
+            return null;
+        }
+
+        // st/sp im Wortinnern -> Hinweis auf scht/schp (Vorsilben ausgenommen)
+        function regelStInnen(w) {
+            var lw = w.toLowerCase();
+            if (/sch[tp]/i.test(w)) return null;
+            var mm = /[aeiouäöürln]s[tp]/i.exec(w);
+            if (!mm) return null;
+            var pos = mm.index + 1;
+            for (var i = 0; i < REGEL_VORSILBEN.length; i++)
+                if (REGEL_VORSILBEN[i].length === pos && lw.indexOf(REGEL_VORSILBEN[i]) === 0) return null;
+            var c = w.charAt(pos);
+            var sch = (c === c.toUpperCase() && c !== c.toLowerCase()) ? 'Sch' : 'sch';
+            return w.slice(0, pos) + sch + w.slice(pos + 1);
+        }
+
+        function regelPruefeWort(roh) {
+            var funde = [];
+            var w = roh, lw = w.toLowerCase();
+
+            if (w.indexOf('ß') >= 0)
+                funde.push({ art:'fehler', regel:'ß', text:'«ß» gibt es nicht – immer «ss»', vorschlag: w.replace(/ß/g,'ss') });
+
+            if (/['’´`]/.test(w)) {
+                var ohne = w.replace(/^([dsDS])['’´`]/, '$1 ').replace(/['’´`]/g, '');
+                funde.push({ art:'fehler', regel:'Apostroph', text:'Kein Apostroph', vorschlag: ohne });
+            }
+
+            if (/y/i.test(w) && !regelIstLehnY(w) && !REGEL_ANGLEICH.hasOwnProperty(lw))
+                funde.push({ art:'fehler', regel:'y', text:'Langes i wird «ii» geschrieben, nicht «y»',
+                             vorschlag: w.replace(/y/g,'ii').replace(/Y/g,'Ii') });
+
+            if (lw === 'ds')
+                funde.push({ art:'fehler', regel:'ds', text:'Artikel «das» heisst «s»', vorschlag: regelKasus(w,'s') });
+
+            if (REGEL_HOCHDEUTSCH.hasOwnProperty(lw) && REGEL_HOCHDEUTSCH[lw])
+                funde.push({ art:'fehler', regel:'Hochdeutsch', text:'Hochdeutsches Wort',
+                             vorschlag: regelKasus(w, REGEL_HOCHDEUTSCH[lw]) });
+
+            var s1 = regelSchtAmAnfang(w);
+            if (s1) funde.push({ art:'fehler', regel:'scht/schp', text:'Am Wortanfang bleibt «st»/«sp»', vorschlag: s1 });
+
+            if (REGEL_ANGLEICH.hasOwnProperty(lw))
+                funde.push({ art:'angleich', regel:'Schreibweise', text:'Ältere Schreibweise',
+                             vorschlag: regelKasus(w, REGEL_ANGLEICH[lw]) });
+
+            if (!funde.length) {
+                var s2 = regelStInnen(w);
+                if (s2) funde.push({ art:'hinweis', regel:'st/sp', text:'Im Wortinnern evtl. «scht»/«schp» – bitte prüfen', vorschlag: s2 });
+            }
+            return funde;
+        }
+
+        function regelIstRegie(zeile) {
+            var z = zeile.trim();
+            if (!z) return false;
+            if (/^\(.*\)$/.test(z)) return true;
+            if (/^(SZENE|AKT|Auftritt|Schauplatz|Stille|Personen|ERSTER|ZWEITER|DRITTER)\b/i.test(z)) return true;
+            if (/^\d+\.[\d.]*\s*$/.test(z)) return true;
+            var hd = (z.match(/\b(der|die|das|und|ist|sich|nicht|einen|einem|eine|wird|werden|hat|sie|er|mit|von|zu|im|auf|dem|den|ihre|seine|einer|als|aus|für|nach|über)\b/gi) || []).length;
+            var woerter = (z.match(/[A-Za-zÄÖÜäöüß]+/g) || []).length;
+            return woerter >= 4 && hd / woerter > 0.28;
+        }
+
+
+        /* ═══════════ PRÜFEN (regelbasiert, ohne KI) ═══════════ */
+
+        var pruefFunde = [];          // aktuelle Fundliste
+        var pruefBekannt = null;      // Set der bekannten Wörter (aus DB)
+
+        function pruefLadeWortschatz() {
+            if (pruefBekannt) return Promise.resolve(pruefBekannt);
+            var alle = new Set();
+            var pageSize = 1000, offset = 0;
+            function batch() {
+                return supabaseCall('woerter?select=begriff,nebenform&limit=' + pageSize + '&offset=' + offset).then(function(d) {
+                    (d || []).forEach(function(r) {
+                        if (r.begriff) String(r.begriff).toLowerCase().split(/[\s/]+/).forEach(function(t) { if (t) alle.add(t); });
+                        if (r.nebenform) String(r.nebenform).toLowerCase().split(/[\s/]+/).forEach(function(t) { if (t) alle.add(t); });
+                    });
+                    if (d && d.length === pageSize) { offset += pageSize; return batch(); }
+                    return alle;
+                });
+            }
+            return batch().then(function(s) { pruefBekannt = s; return s; });
+        }
+
+        function pruefText() {
+            var txt = state.pruefText || '';
+            if (!txt.trim()) { showToast('Bitte zuerst einen Text einfügen', 'warning'); return; }
+            showToast('Prüfe...', 'warning');
+            pruefLadeWortschatz().then(function(bekannt) {
+                var zeilen = txt.split('\n');
+                var funde = [];
+                var html = '';
+                var idx = 0;
+                var regieZeilen = 0;
+
+                zeilen.forEach(function(zeile, zi) {
+                    var regie = state.pruefRegie && regelIstRegie(zeile);
+                    if (regie) { regieZeilen++; html += '<span style="opacity:.45;font-style:italic;">' + escHtml(zeile) + '</span>\n'; return; }
+
+                    // Sprecher-Präfix (MARIA:) unangetastet lassen
+                    var m = /^([A-ZÄÖÜ][A-ZÄÖÜa-zäöü\s.]{0,24}:)(.*)$/.exec(zeile);
+                    var kopf = '', rest = zeile;
+                    if (m) { kopf = m[1]; rest = m[2]; }
+                    if (kopf) html += '<b>' + escHtml(kopf) + '</b>';
+
+                    var teile = rest.split(/([A-Za-zÄÖÜäöüßé'’´`-]+)/);
+                    teile.forEach(function(t) {
+                        if (!/^[A-Za-zÄÖÜäöüßé'’´`-]+$/.test(t) || t.length < 2) { html += escHtml(t); return; }
+                        var f = regelPruefeWort(t);
+                        var art = null, info = null;
+                        if (f.length) { art = f[0].art; info = f[0]; }
+                        else if (!bekannt.has(t.toLowerCase())) { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                        if (!art) { html += escHtml(t); return; }
+                        var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis') ? 'wz-angleich' : 'wz-neu';
+                        funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
+                        html += '<span class="wz-hit ' + cls + '" data-i="' + idx + '" onclick="pruefSpring(' + idx + ')" title="' + escHtml(info.text) + '">' + escHtml(t) + '</span>';
+                        idx++;
+                    });
+                    html += '\n';
+                });
+
+                pruefFunde = funde;
+                state.pruefErgebnis = { html: html, regie: regieZeilen };
+                state.adminTab = 'pruefen';
+                render();
+                showToast(funde.length + ' Fundstellen', funde.length ? 'warning' : 'success');
+            }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
+        }
+
+        function escHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        }
+
+        function pruefSpring(i) {
+            var el = document.getElementById('fund-' + i);
+            if (el) { el.scrollIntoView({ behavior:'smooth', block:'center' }); el.style.outline = '2px solid var(--accent-color)';
+                      setTimeout(function(){ el.style.outline = ''; }, 1200); }
+        }
+
+        // Eine einzelne Korrektur im Text anwenden
+        function pruefUebernehmen(i) {
+            var f = pruefFunde[i];
+            if (!f || !f.vorschlag) return;
+            var zeilen = (state.pruefText || '').split('\n');
+            var z = zeilen[f.zeile];
+            if (z == null) return;
+            var re = new RegExp('(^|[^A-Za-zÄÖÜäöüß])(' + f.wort.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')(?![A-Za-zÄÖÜäöüß])');
+            if (!re.test(z)) { showToast('Stelle nicht mehr gefunden', 'warning'); return; }
+            zeilen[f.zeile] = z.replace(re, function(all, pre) { return pre + f.vorschlag; });
+            state.pruefText = zeilen.join('\n');
+            showToast('«' + f.wort + '» → «' + f.vorschlag + '»', 'success');
+            pruefText();
+        }
+
+        // Alle sicheren Korrekturen (Fehler + Angleichungen) anwenden
+        function pruefAlleUebernehmen() {
+            var anwendbar = pruefFunde.filter(function(f) { return f.vorschlag && (f.art === 'fehler' || f.art === 'angleich'); });
+            if (!anwendbar.length) { showToast('Nichts anzuwenden', 'warning'); return; }
+            if (!confirm(anwendbar.length + ' Korrekturen übernehmen?')) return;
+            var zeilen = (state.pruefText || '').split('\n');
+            var n = 0;
+            // pro Zeile alle Vorkommen ersetzen
+            var proZeile = {};
+            anwendbar.forEach(function(f) { (proZeile[f.zeile] = proZeile[f.zeile] || []).push(f); });
+            Object.keys(proZeile).forEach(function(zi) {
+                var z = zeilen[zi];
+                proZeile[zi].forEach(function(f) {
+                    var re = new RegExp('(^|[^A-Za-zÄÖÜäöüß])(' + f.wort.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + ')(?![A-Za-zÄÖÜäöüß])', 'g');
+                    var vorher = z;
+                    z = z.replace(re, function(all, pre) { return pre + f.vorschlag; });
+                    if (z !== vorher) n++;
+                });
+                zeilen[zi] = z;
+            });
+            state.pruefText = zeilen.join('\n');
+            showToast(n + ' Korrekturen übernommen', 'success');
+            pruefText();
+        }
+
+        function pruefKopieren() {
+            var t = state.pruefText || '';
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ showToast('Text kopiert', 'success'); });
+            else showToast('Kopieren nicht möglich', 'error');
+        }
+
+        function pruefZuruecksetzen() {
+            state.pruefErgebnis = null; pruefFunde = []; render();
+        }
+
+        // Unbekanntes Wort direkt ins Wörterbuch aufnehmen
+        function pruefNeuesWort(i) {
+            var f = pruefFunde[i];
+            if (!f) return;
+            adminNeuerEintrag(f.wort);
+        }
+
+        function renderPruefen() {
+            var e = state.pruefErgebnis;
+            var h = '<div class="wz-wrap">';
+
+            h += '<div class="wz-box"><h3>📝 Text prüfen</h3>';
+            h += '<textarea class="wz-ta" id="pruef-ta" placeholder="Mundarttext hier einfügen…">' + escHtml(state.pruefText || '') + '</textarea>';
+            h += '<div class="wz-row">';
+            h += '<button class="btn" onclick="pruefText()">🔍 Prüfen</button>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-regie"' + (state.pruefRegie !== false ? ' checked' : '') + '> Regieanweisungen überspringen</label>';
+            if (e) h += '<button class="wz-mini grau" onclick="pruefKopieren()">📋 Text kopieren</button>';
+            if (e) h += '<button class="wz-mini grau" onclick="pruefZuruecksetzen()">✕ Ergebnis schliessen</button>';
+            h += '</div>';
+            h += '<div class="wz-legende"><span><b class="wz-fehler">Regelverstoss</b> muss korrigiert werden</span>'
+               + '<span><b class="wz-angleich">Angleichung</b> ältere Schreibweise</span>'
+               + '<span><b class="wz-neu">unbekannt</b> nicht im Wörterbuch</span></div>';
+            h += '</div>';
+
+            if (e) {
+                var nF = pruefFunde.filter(function(f){return f.art==='fehler';}).length;
+                var nA = pruefFunde.filter(function(f){return f.art==='angleich'||f.art==='hinweis';}).length;
+                var nN = pruefFunde.filter(function(f){return f.art==='neu';}).length;
+
+                h += '<div class="wz-box"><h3>Ergebnis</h3>';
+                h += '<div class="wz-row" style="margin:0 0 10px;">'
+                   + '<span class="wz-badge wz-b-f">' + nF + ' Regelverstösse</span>'
+                   + '<span class="wz-badge wz-b-a">' + nA + ' Angleichungen</span>'
+                   + '<span class="wz-badge wz-b-n">' + nN + ' unbekannt</span>'
+                   + (e.regie ? '<span class="wz-muted">' + e.regie + ' Regiezeilen übersprungen</span>' : '')
+                   + '</div>';
+                if (nF + nA > 0) h += '<button class="btn" onclick="pruefAlleUebernehmen()" style="margin-bottom:10px;">✓ Alle ' + (nF+nA) + ' Korrekturen übernehmen</button>';
+                h += '<div class="wz-result">' + e.html + '</div></div>';
+
+                if (pruefFunde.length) {
+                    h += '<div class="wz-box"><h3>Fundstellen</h3><div class="wz-liste">';
+                    pruefFunde.forEach(function(f, i) {
+                        var b = f.art === 'fehler' ? 'wz-b-f' : (f.art === 'neu' ? 'wz-b-n' : 'wz-b-a');
+                        h += '<div class="wz-item" id="fund-' + i + '">';
+                        h += '<span class="wz-item-w">' + escHtml(f.wort) + '</span>';
+                        h += '<span class="wz-badge ' + b + '">' + escHtml(f.regel) + '</span>';
+                        h += '<span class="wz-item-m">' + escHtml(f.text) + (f.vorschlag ? ' → <b>' + escHtml(f.vorschlag) + '</b>' : '') + '</span>';
+                        if (f.vorschlag) h += '<button class="wz-mini" onclick="pruefUebernehmen(' + i + ')">übernehmen</button>';
+                        if (f.art === 'neu') h += '<button class="wz-mini grau" onclick="pruefNeuesWort(' + i + ')">ins Wörterbuch</button>';
+                        h += '</div>';
+                    });
+                    h += '</div></div>';
+                }
+            }
+            h += '</div>';
+            return h;
+        }
+
+
+        /* ═══════════ KI (Claude API) ═══════════ */
+
+        var KI_URL = 'https://api.anthropic.com/v1/messages';
+        var KI_MODELS_URL = 'https://api.anthropic.com/v1/models';
+
+        // Die Schreibregeln als Systemprompt
+        function kiRegelPrompt() {
+            return 'Du bist Fachredaktor für ein Schweizer Mundart-Wörterbuch (Dialekte aus Luzern, Aargau, Solothurn und Bern). '
+              + 'Die Schreibweise ist SCHRIFTNAH (am gewohnten Schriftbild orientiert), nicht streng lautgetreu.\n\n'
+              + 'VERBINDLICHE SCHREIBREGELN:\n'
+              + '1. Nie ß, immer ss.\n'
+              + '2. Keine Apostrophe: zäme (nicht z\'säme), d Sach (nicht d\'Sach), Gstabi (nicht G\'stabi).\n'
+              + '3. Langes i = ii, nie y: Ziit, gsii, Wii, miin, Priis. Ausnahme: echte Lehnwörter behalten y (Party, Typ, Baby, Pyjama, Tyrann).\n'
+              + '4. Immer «nid», nie «nöd» oder «nicht».\n'
+              + '5. Artikel: «das» = s, «die» = d. Nie «ds».\n'
+              + '6. st/sp bleibt am WORTANFANG, am Anfang eines Kompositum-Teils und nach einer Vorsilbe: Stei, Spiel, Telefonstange, verstah, gstande. '
+              + 'Im WORTINNERN wird es scht/schp: Fänschter, Eschtrig, Luscht, Mischt, Troscht, Fäscht. '
+              + 'Nie «scht/schp» am Wortanfang schreiben (nicht schtärbe, sondern stärbe).\n'
+              + '7. ie/ue/üe sind echte Zwielaute und bleiben (Lied, guet, wüescht) – nie iä/uä/üä.\n'
+              + '8. eu und äu werden zu öi: nöi, Höi, Fröid, Böim. «eu» nur in Fremdwörtern.\n'
+              + '9. Unbetontes e bleibt e: Gipfeli, Meiteli (nicht Gipfäli).\n'
+              + '10. Das l wird geschrieben: Milch, Gäld, Felse (keine l-Vokalisierung wie Miuch/Gäud).\n'
+              + '11. Fremdwörter auf -ier/-iere behalten ie: pressiere, studiere, Offizier.\n'
+              + '12. VERBENDUNGEN: 3. Person Einzahl hat -t (är lacht, är macht, är chunt, är het). '
+              + 'Mehrzahl hat -d (mir lached, si gönd, si hend, si sind). '
+              + 'Bernische 2. Person Mehrzahl hat -t (dir lachet). '
+              + 'Nur wenn der Stamm auf t/d endet, steht -et: är wartet, är redet.\n'
+              + '13. Pronomen: betont/unbetont är/er, mir/mer, iich/i. Immer «si» (nie «se»), immer «ihr» (nie dir/der). '
+              + 'Ihr-Formen: ihr, öich, öier/öiri/öies. Nie euch/euer.\n'
+              + '14. Grossschreibung: du, dich, dir, dis bleiben klein. Höflichkeitsform gross: Ihr, Öich, Si, Öier.\n'
+              + '15. Partizip: ge- wird g- (gmacht, gseh, gsii); vor Plosiven kein g (cho, ta, gange); '
+              + 'trennbare Vorsilbe + g (abegluegt); untrennbare Vorsilben ohne g (verzellt, brichtet); ch- wird im Partizip k- (choche → kochet).';
+        }
+
+        function kiBereit() { return !!(state.ki && state.ki.key); }
+
+        function kiSpeichern() {
+            var k = (document.getElementById('ki-key') || {}).value || '';
+            var m = (document.getElementById('ki-modell') || {}).value || state.ki.modell;
+            var w = !!(document.getElementById('ki-websuche') || {}).checked;
+            state.ki.key = k.trim();
+            state.ki.modell = m;
+            state.ki.websuche = w;
+            if (state.ki.key) localStorage.setItem('mw-api-key', state.ki.key); else localStorage.removeItem('mw-api-key');
+            localStorage.setItem('mw-modell', state.ki.modell);
+            localStorage.setItem('mw-websuche', w ? '1' : '0');
+            showToast('Einstellungen gespeichert', 'success');
+            render();
+        }
+
+        function kiSchluesselLoeschen() {
+            if (!confirm('API-Schlüssel aus diesem Browser entfernen?')) return;
+            state.ki.key = ''; localStorage.removeItem('mw-api-key');
+            showToast('Schlüssel entfernt', 'success'); render();
+        }
+
+        // Modellliste live von der API holen
+        function kiModelleLaden() {
+            var k = ((document.getElementById('ki-key') || {}).value || state.ki.key || '').trim();
+            if (!k) { showToast('Zuerst Schlüssel eintragen', 'warning'); return; }
+            showToast('Lade Modelle...', 'warning');
+            fetch(KI_MODELS_URL + '?limit=100', {
+                headers: { 'x-api-key': k, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
+            }).then(function(r) {
+                if (!r.ok) throw new Error(r.status === 401 ? 'Schlüssel ungültig' : 'Fehler ' + r.status);
+                return r.json();
+            }).then(function(d) {
+                var liste = (d.data || []).map(function(m) { return { id: m.id, name: m.display_name || m.id }; });
+                state.ki.modelle = liste;
+                showToast(liste.length + ' Modelle geladen', 'success');
+                render();
+            }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        // Zentraler API-Aufruf
+        function kiFrage(system, user, maxTokens, mitWebsuche) {
+            if (!kiBereit()) return Promise.reject(new Error('Kein API-Schlüssel hinterlegt'));
+            var body = {
+                model: state.ki.modell,
+                max_tokens: maxTokens || 2000,
+                system: system,
+                messages: [{ role: 'user', content: user }]
+            };
+            if (mitWebsuche && state.ki.websuche)
+                body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }];
+            return fetch(KI_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': state.ki.key,
+                    'anthropic-version': '2023-06-01',
+                    'anthropic-dangerous-direct-browser-access': 'true'
+                },
+                body: JSON.stringify(body)
+            }).then(function(r) {
+                if (!r.ok) return r.text().then(function(t) {
+                    if (r.status === 401) throw new Error('API-Schlüssel ungültig');
+                    if (r.status === 429) throw new Error('Zu viele Anfragen – kurz warten');
+                    throw new Error('API-Fehler ' + r.status + ': ' + t.slice(0, 200));
+                });
+                return r.json();
+            }).then(function(d) {
+                var txt = '';
+                (d.content || []).forEach(function(c) { if (c.type === 'text') txt += c.text; });
+                return txt;
+            });
+        }
+
+        function kiJson(text) {
+            if (!text) return null;
+            var m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+            var s = m ? m[1] : text;
+            var a = s.indexOf('{'), b = s.lastIndexOf('}');
+            if (a < 0 || b < 0) return null;
+            try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+        }
+
+        /* ---- KI-Textprüfung ---- */
+        function kiTextPruefen() {
+            var t = (document.getElementById('ki-text') || {}).value || '';
+            if (!t.trim()) { showToast('Bitte Text eingeben', 'warning'); return; }
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Einstellungen', 'error'); return; }
+            state.pruefKiText = t; state.kiLaeuft = true; state.kiAntwort = ''; render();
+            var sys = kiRegelPrompt() + '\n\nAUFGABE: Prüfe den Text auf Verstösse gegen diese Regeln. '
+                + 'Hochdeutsche Regieanweisungen und Sprechernamen ignorierst du. '
+                + 'Antworte als Markdown mit zwei Abschnitten: '
+                + '«## Regelverstösse» (Tabelle: Wort | Regel | Vorschlag) und «## Hinweise» (Zweifelsfälle, z.B. Zusammensetzungen bei st/sp). '
+                + 'Wenn alles korrekt ist, sag das kurz. Sei knapp.';
+            kiFrage(sys, t, 3000, false).then(function(a) {
+                state.kiAntwort = a; state.kiLaeuft = false; render();
+            }).catch(function(e) {
+                state.kiLaeuft = false; state.kiAntwort = '⚠️ ' + e.message; render();
+            });
+        }
+
+        /* ---- KI füllt alle Felder eines Wortes ---- */
+        function kiFelderFuellen(begriff, zielId) {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Einstellungen', 'error'); return; }
+            begriff = (begriff || '').trim();
+            if (!begriff) { showToast('Kein Begriff angegeben', 'warning'); return; }
+            showToast('KI arbeitet an «' + begriff + '»...', 'warning');
+            var kats = (state.kategorien || []).join('; ');
+            var sys = kiRegelPrompt()
+              + '\n\nAUFGABE: Für das vorgegebene Mundartwort füllst du alle Wörterbuchfelder aus. '
+              + 'Antworte AUSSCHLIESSLICH mit einem JSON-Objekt, ohne weiteren Text, mit genau diesen Schlüsseln:\n'
+              + '{"begriff":"","reim":"","wortart":"","synonyme":"","bedeutung":"","beispielsatz":"","bemerkung":"","kategorie":"","nebenform":"","nebenform_reim":""}\n\n'
+              + 'FELDREGELN:\n'
+              + '- begriff: das Stichwort in unserer Schreibweise (Grundform).\n'
+              + '- reim: ab dem betonten Vokal bis Wortende, ohne die Anlautkonsonanten dieser Silbe. Beispiele: Cherze→erze, Chübel→übel, bringe→inge, grüesse→üesse, noogoh→oh.\n'
+              + '- wortart: Substantiv, Verb, Adjektiv, Adverb, Pronomen, Präposition, Konjunktion, Interjektion, Numerale, Artikel oder Redewendung.\n'
+              + '- synonyme: 4–8 HOCHDEUTSCHE Entsprechungen, kommagetrennt (dienen der Übersetzung Hochdeutsch→Mundart).\n'
+              + '- bedeutung: ein kurzer, klarer Satz.\n'
+              + '- beispielsatz: EIN kurzer Mundartsatz nach unseren Regeln.\n'
+              + '- bemerkung: nur bei Bedarf (Herkunft, Eigenname, Fremdwort, regionale Variante), sonst leer.\n'
+              + '- kategorie: genau eine aus dieser Liste: ' + kats + '\n'
+              + '- nebenform: nur bei Verben das Partizip II, sonst leer.\n'
+              + '- nebenform_reim: Reim des Partizips, sonst leer.';
+            kiFrage(sys, 'Mundartwort: ' + begriff, 1500, true).then(function(a) {
+                var o = kiJson(a);
+                if (!o) { showToast('Antwort nicht lesbar', 'error'); return; }
+                ['begriff','reim','wortart','synonyme','bedeutung','beispielsatz','bemerkung','kategorie','nebenform','nebenform_reim'].forEach(function(f) {
+                    var el = document.getElementById((zielId || 'adm_') + f);
+                    if (el && o[f] != null && String(o[f]).trim() !== '') el.value = o[f];
+                });
+                showToast('✓ Felder ausgefüllt – bitte prüfen', 'success');
+            }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        function renderKI() {
+            var k = state.ki;
+            var h = '<div class="wz-wrap">';
+
+            // --- Einstellungen ---
+            h += '<div class="wz-box"><h3>⚙️ KI-Einstellungen</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:10px;">Der Schlüssel wird nur in diesem Browser gespeichert und nie an die Website übertragen.</p>';
+            h += '<div class="ki-grid">';
+            h += '<div><label class="wz-muted">API-Schlüssel</label>'
+               + '<input type="password" class="input" id="ki-key" placeholder="sk-ant-..." value="' + escHtml(k.key) + '"></div>';
+            h += '<div><label class="wz-muted">Modell</label><select class="input" id="ki-modell">';
+            var liste = k.modelle && k.modelle.length ? k.modelle : [{ id: k.modell, name: k.modell }];
+            var drin = false;
+            liste.forEach(function(m) { if (m.id === k.modell) drin = true; });
+            if (!drin) liste = [{ id: k.modell, name: k.modell + ' (gespeichert)' }].concat(liste);
+            liste.forEach(function(m) {
+                h += '<option value="' + escHtml(m.id) + '"' + (m.id === k.modell ? ' selected' : '') + '>' + escHtml(m.name) + '</option>';
+            });
+            h += '</select></div>';
+            h += '</div>';
+            h += '<div class="wz-row">';
+            h += '<button class="btn" onclick="kiSpeichern()">Speichern</button>';
+            h += '<button class="wz-mini grau" onclick="kiModelleLaden()">↻ Modelle laden</button>';
+            h += '<button class="wz-mini grau" onclick="kiTest()">✓ Verbindung testen</button>';
+            if (k.key) h += '<button class="wz-mini grau" onclick="kiSchluesselLoeschen()">🗑 Schlüssel entfernen</button>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ki-websuche"' + (k.websuche ? ' checked' : '') + '> Web-Recherche erlauben (kostet extra)</label>';
+            h += '<span class="ki-status"><span class="ki-dot' + (k.key ? ' on' : '') + '"></span>' + (k.key ? 'bereit' : 'kein Schlüssel') + '</span>';
+            h += '</div></div>';
+
+            // --- Textprüfung mit KI ---
+            h += '<div class="wz-box"><h3>🤖 Text mit KI prüfen</h3>';
+            h += '<textarea class="wz-ta" id="ki-text" placeholder="Mundarttext hier einfügen…">' + escHtml(state.pruefKiText || '') + '</textarea>';
+            h += '<div class="wz-row"><button class="btn" onclick="kiTextPruefen()"' + (kiBereit() ? '' : ' disabled') + '>🤖 Mit KI prüfen</button>';
+            h += '<span class="wz-muted">Die KI kennt alle Schreibregeln und beurteilt auch Zweifelsfälle.</span></div>';
+            if (state.kiLaeuft) h += '<div class="loading" style="padding:20px;"><div class="spinner"></div></div>';
+            if (state.kiAntwort) h += '<div class="wz-result" style="line-height:1.6;">' + kiMarkdown(state.kiAntwort) + '</div>';
+            h += '</div>';
+
+            // --- Wort anreichern ---
+            h += '<div class="wz-box"><h3>✨ Wort anreichern</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Gib ein Mundartwort ein – die KI füllt alle Wörterbuchfelder nach unseren Regeln aus.</p>';
+            h += '<div class="wz-row"><input class="input" id="ki-wort" placeholder="z.B. Schutt" style="max-width:260px;">';
+            h += '<button class="btn" onclick="adminNeuerEintrag((document.getElementById(\'ki-wort\')||{}).value)"' + (kiBereit() ? '' : ' disabled') + '>Maske öffnen</button></div>';
+            h += '</div>';
+
+            h += '</div>';
+            return h;
+        }
+
+        function kiTest() {
+            var k = ((document.getElementById('ki-key') || {}).value || '').trim() || state.ki.key;
+            if (!k) { showToast('Kein Schlüssel', 'warning'); return; }
+            showToast('Teste...', 'warning');
+            var alt = state.ki.key; state.ki.key = k;
+            kiFrage('Antworte mit genau einem Wort.', 'Sag: bereit', 20, false)
+              .then(function(a) { showToast('✓ Verbindung steht (' + (a || '').trim().slice(0,20) + ')', 'success'); })
+              .catch(function(e) { state.ki.key = alt; showToast(e.message, 'error'); });
+        }
+
+        // sehr einfacher Markdown-Renderer für die KI-Antwort
+        function kiMarkdown(t) {
+            var s = escHtml(t);
+            s = s.replace(/^### (.*)$/gm, '<h4 style="margin:10px 0 4px;color:var(--accent-color);">$1</h4>');
+            s = s.replace(/^## (.*)$/gm, '<h3 style="margin:12px 0 6px;color:var(--accent-color);">$1</h3>');
+            s = s.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+            s = s.replace(/`(.+?)`/g, '<code style="background:var(--bg-tertiary);padding:1px 4px;border-radius:3px;">$1</code>');
+            // Tabellen
+            s = s.replace(/((?:^\|.*\|\s*$\n?)+)/gm, function(block) {
+                var zeilen = block.trim().split('\n').filter(function(z) { return !/^\|[\s|:-]+\|$/.test(z.trim()); });
+                var out = '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:13px;">';
+                zeilen.forEach(function(z, i) {
+                    var zellen = z.trim().replace(/^\||\|$/g, '').split('|');
+                    out += '<tr>';
+                    zellen.forEach(function(c) {
+                        out += i === 0
+                          ? '<th style="border:1px solid var(--border-color);padding:5px;background:var(--bg-tertiary);text-align:left;">' + c.trim() + '</th>'
+                          : '<td style="border:1px solid var(--border-color);padding:5px;">' + c.trim() + '</td>';
+                    });
+                    out += '</tr>';
+                });
+                return out + '</table>';
+            });
+            return s;
+        }
+
+
+        /* ═══════════ NEUER EINTRAG (Admin, mit KI-Hilfe) ═══════════ */
+
+        function adminNeuerEintrag(vorgabe) {
+            if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
+            var felder = [['begriff','Begriff'],['reim','Reim'],['wortart','Wortart'],['kategorie','Kategorie'],
+                          ['nebenform','Partizip / Nebenform'],['nebenform_reim','Reim der Nebenform']];
+            var flaechen = [['synonyme','Synonyme (hochdeutsch, kommagetrennt)'],['bedeutung','Bedeutung'],
+                            ['beispielsatz','Beispielsatz'],['bemerkung','Bemerkung']];
+            var c = '<form onsubmit="adminNeuSpeichern();return false;">';
+            c += '<div class="wz-row" style="margin:0 0 12px;">';
+            c += '<button type="button" class="btn" onclick="kiFelderFuellen((document.getElementById(\'adm_begriff\')||{}).value)"'
+               + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>✨ Felder von der KI ausfüllen lassen</button>';
+            c += '<span class="wz-muted">Begriff eintragen, dann Knopf drücken.</span></div>';
+            felder.forEach(function(f) {
+                var v = (f[0] === 'begriff' && vorgabe) ? vorgabe : '';
+                c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label>'
+                   + '<input type="text" id="adm_' + f[0] + '" class="input" value="' + escHtml(v) + '"></div>';
+            });
+            flaechen.forEach(function(f) {
+                c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label>'
+                   + '<textarea id="adm_' + f[0] + '" class="input" rows="2"></textarea></div>';
+            });
+            c += '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">'
+               + '<button type="submit" class="btn">💾 Ins Wörterbuch aufnehmen</button>'
+               + '<button type="button" class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal()">Abbrechen</button>'
+               + '</div></form>';
+            showModal('➕ Neues Wort' + (vorgabe ? ': ' + escHtml(vorgabe) : ''), c);
+        }
+
+        function adminNeuSpeichern() {
+            if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
+            var f = ['begriff','reim','wortart','kategorie','nebenform','nebenform_reim','synonyme','bedeutung','beispielsatz','bemerkung'];
+            var d = {};
+            f.forEach(function(n) { var el = document.getElementById('adm_' + n); if (el) { var v = el.value.trim(); d[n] = v === '' ? null : v; } });
+            if (!d.begriff) { showToast('Der Begriff fehlt', 'warning'); return; }
+            var heute = new Date().toISOString().slice(0,10);
+            d.created_at = heute; d.updated_at = heute;
+            if (d.reim && !d.reim_assonanz) {
+                var runs = d.reim.toLowerCase().match(/[aeiouäöü]+/g) || [];
+                d.reim_assonanz = runs.map(function(r) {
+                    return (r.length >= 2 && r.split('').every(function(c){return c===r[0];})) ? r[0] : r;
+                }).join('.') || null;
+            }
+            supabaseCall('woerter', { method: 'POST', body: JSON.stringify(d) }).then(function() {
+                showToast('✓ «' + d.begriff + '» aufgenommen', 'success');
+                if (pruefBekannt) pruefBekannt.add(d.begriff.toLowerCase());
+                closeModal();
+                loadTotalCount().then(function(){ render(); });
+            }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
+        }
+
+        /* ═══════════ WERKSTATT (Übersetzungs-Werkbank) ═══════════ */
+
+        var wkTreffer = null;
+
+        function renderWerkstatt() {
+            var h = '<div class="wz-wrap">';
+            h += '<div class="wz-box"><h3>🔧 Übersetzungs-Werkbank</h3>';
+            h += '<div class="wz-row" style="margin:0 0 10px;">';
+            h += '<label class="wz-muted">Ausgangssprache</label>';
+            h += '<select class="input" id="wk-sprache" style="max-width:180px;">';
+            ['Deutsch','Englisch','Französisch'].forEach(function(s) {
+                h += '<option value="' + s + '"' + (state.wkSprache === s ? ' selected' : '') + '>' + s + '</option>';
+            });
+            h += '</select>';
+            h += '<button class="wz-mini grau" onclick="wkTextLaden()">📂 Datei laden</button>';
+            h += '<input type="file" id="wk-datei" accept=".txt,.md,text/plain" style="display:none;">';
+            h += '<button class="wz-mini grau" onclick="wkQuelleUebernehmen()">↻ Quelltext übernehmen</button>';
+            h += '<span class="wz-muted">Rechtsklick auf ein Wort links zeigt die Mundart-Entsprechungen.</span>';
+            h += '</div>';
+
+            h += '<div class="wk-grid">';
+            // linke Spalte
+            h += '<div><label class="wz-muted">Quelltext (' + escHtml(state.wkSprache) + ')</label>';
+            if (state.wkQuelle && state.wkQuelle.trim()) {
+                h += '<div class="wk-src" id="wk-src" oncontextmenu="return wkKontext(event)">' + wkQuelleHtml(state.wkQuelle) + '</div>';
+            } else {
+                h += '<textarea class="wz-ta wk-ta" id="wk-quelle-ta" placeholder="Deutschen, englischen oder französischen Text hier einfügen…"></textarea>';
+            }
+            h += '</div>';
+            // rechte Spalte
+            h += '<div><label class="wz-muted">Mundart-Übersetzung</label>';
+            h += '<textarea class="wz-ta wk-ta" id="wk-ziel" placeholder="Hier entsteht die Mundartfassung…">' + escHtml(state.wkZiel || '') + '</textarea></div>';
+            h += '</div>';
+
+            h += '<div class="wz-row">';
+            h += '<button class="btn" onclick="wkUebersetzen()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>🤖 Von der KI übersetzen lassen</button>';
+            h += '<button class="wz-mini grau" onclick="wkAbschnitt()"' + (kiBereit() ? '' : ' disabled') + '>Nur markierten Abschnitt</button>';
+            h += '<button class="wz-mini grau" onclick="wkZielPruefen()">🔍 Übersetzung prüfen</button>';
+            h += '<button class="wz-mini grau" onclick="wkZielKopieren()">📋 Kopieren</button>';
+            h += '<button class="wz-mini grau" onclick="wkLeeren()">✕ Leeren</button>';
+            h += '</div>';
+            if (state.kiLaeuft) h += '<div class="loading" style="padding:16px;"><div class="spinner"></div></div>';
+            h += '</div></div>';
+            return h;
+        }
+
+        function wkQuelleHtml(txt) {
+            var teile = String(txt).split(/([A-Za-zÄÖÜäöüßÀ-ÿ]+)/);
+            var out = '';
+            teile.forEach(function(t) {
+                if (/^[A-Za-zÄÖÜäöüßÀ-ÿ]+$/.test(t) && t.length > 1)
+                    out += '<span class="wk-w" data-w="' + escHtml(t) + '">' + escHtml(t) + '</span>';
+                else out += escHtml(t);
+            });
+            return out;
+        }
+
+        function wkQuelleUebernehmen() {
+            var ta = document.getElementById('wk-quelle-ta');
+            if (ta) { state.wkQuelle = ta.value; }
+            var z = document.getElementById('wk-ziel'); if (z) state.wkZiel = z.value;
+            var s = document.getElementById('wk-sprache'); if (s) state.wkSprache = s.value;
+            render();
+        }
+
+        function wkTextLaden() {
+            var inp = document.getElementById('wk-datei');
+            if (!inp) return;
+            inp.onchange = function(e) {
+                var f = e.target.files && e.target.files[0];
+                if (!f) return;
+                var r = new FileReader();
+                r.onload = function(ev) { state.wkQuelle = String(ev.target.result || ''); render(); showToast('Datei geladen', 'success'); };
+                r.readAsText(f);
+            };
+            inp.click();
+        }
+
+        function wkLeeren() {
+            if (!confirm('Beide Felder leeren?')) return;
+            state.wkQuelle = ''; state.wkZiel = ''; wkPopZu(); render();
+        }
+
+        function wkZielKopieren() {
+            var z = document.getElementById('wk-ziel');
+            var t = z ? z.value : (state.wkZiel || '');
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function(){ showToast('Übersetzung kopiert', 'success'); });
+        }
+
+        function wkZielPruefen() {
+            var z = document.getElementById('wk-ziel');
+            state.wkZiel = z ? z.value : state.wkZiel;
+            if (!state.wkZiel || !state.wkZiel.trim()) { showToast('Noch keine Übersetzung', 'warning'); return; }
+            state.pruefText = state.wkZiel;
+            state.adminTab = 'pruefen';
+            render();
+            setTimeout(pruefText, 60);
+        }
+
+        /* --- Rechtsklick: Wörterbuch befragen --- */
+        function wkKontext(ev) {
+            var el = ev.target;
+            if (!el || !el.classList || !el.classList.contains('wk-w')) return true;
+            ev.preventDefault();
+            var wort = el.getAttribute('data-w') || '';
+            wkPopZeigen(ev.clientX, ev.clientY, wort);
+            return false;
+        }
+
+        function wkPopZu() { var p = document.getElementById('wk-pop'); if (p) p.remove(); }
+
+        function wkPopZeigen(x, y, wort) {
+            wkPopZu();
+            var d = document.createElement('div');
+            d.className = 'wk-pop'; d.id = 'wk-pop';
+            d.style.left = Math.min(x, window.innerWidth - 340) + 'px';
+            d.style.top = Math.min(y, window.innerHeight - 320) + 'px';
+            d.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">suche…</div>';
+            document.body.appendChild(d);
+            setTimeout(function() { document.addEventListener('click', wkPopZuEinmal); }, 10);
+
+            var q = encodeURIComponent(wort);
+            Promise.all([
+                supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&synonyme=ilike.*' + q + '*&limit=12&order=begriff.asc'),
+                supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&begriff=ilike.' + q + '&limit=4')
+            ]).then(function(r) {
+                var liste = (r[1] || []).concat(r[0] || []);
+                var seen = {}, res = [];
+                liste.forEach(function(w) { var k = w.begriff.toLowerCase(); if (!seen[k]) { seen[k] = 1; res.push(w); } });
+                // Direkttreffer nach oben
+                res.sort(function(a, b) { return wkRang(b, wort) - wkRang(a, wort); });
+                var h = '<h4>« ' + escHtml(wort) + ' »</h4>';
+                if (!res.length) {
+                    h += '<div class="wz-muted">Keine Entsprechung gefunden.</div>';
+                    if (kiBereit()) h += '<button class="wz-mini" style="margin-top:8px;" onclick="wkKiVorschlag(\'' + escAttr(wort) + '\')">🤖 KI fragen</button>';
+                } else {
+                    res.slice(0, 10).forEach(function(w) {
+                        h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w.begriff) + '\')">';
+                        h += '<b>' + escHtml(w.begriff) + '</b>' + (wkRang(w, wort) === 2 ? ' <span style="color:var(--accent-color);">★</span>' : '');
+                        if (w.wortart) h += ' <small style="display:inline;">' + escHtml(w.wortart) + '</small>';
+                        if (w.nebenform) h += '<small>Partizip: ' + escHtml(w.nebenform) + '</small>';
+                        if (w.bedeutung) h += '<small>' + escHtml(String(w.bedeutung).slice(0, 90)) + '</small>';
+                        h += '</div>';
+                    });
+                    if (kiBereit()) h += '<button class="wz-mini grau" style="margin-top:8px;" onclick="wkKiVorschlag(\'' + escAttr(wort) + '\')">🤖 KI fragen</button>';
+                }
+                var p = document.getElementById('wk-pop'); if (p) p.innerHTML = h;
+            }).catch(function(e) {
+                var p = document.getElementById('wk-pop'); if (p) p.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">Fehler: ' + escHtml(e.message) + '</div>';
+            });
+        }
+
+        function wkRang(w, such) {
+            var s = String(such).toLowerCase();
+            if (String(w.begriff).toLowerCase() === s) return 3;
+            var syn = String(w.synonyme || '').toLowerCase().split(',').map(function(x){return x.trim();});
+            if (syn.length && syn[0] === s) return 2;
+            return 1;
+        }
+
+        function escAttr(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+        function wkPopZuEinmal() { wkPopZu(); document.removeEventListener('click', wkPopZuEinmal); }
+
+        function wkEinfuegen(wort) {
+            var z = document.getElementById('wk-ziel');
+            if (!z) return;
+            var p = z.selectionStart != null ? z.selectionStart : z.value.length;
+            z.value = z.value.slice(0, p) + wort + z.value.slice(p);
+            state.wkZiel = z.value;
+            z.focus(); z.selectionStart = z.selectionEnd = p + wort.length;
+            wkPopZu();
+        }
+
+        function wkKiVorschlag(wort) {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel', 'error'); return; }
+            var p = document.getElementById('wk-pop');
+            if (p) p.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">KI denkt nach…</div>';
+            var sys = kiRegelPrompt() + '\n\nAUFGABE: Nenne für das vorgegebene Wort 3–6 mögliche Schweizer Mundart-Entsprechungen '
+                    + 'in unserer Schreibweise. Antworte nur als kurze Liste «Wort – knappe Erklärung», ohne Vorrede.';
+            kiFrage(sys, state.wkSprache + ': ' + wort, 400, false).then(function(a) {
+                var pp = document.getElementById('wk-pop');
+                if (!pp) return;
+                var zeilen = String(a).split('\n').filter(function(z){ return z.trim(); });
+                var h = '<h4>« ' + escHtml(wort) + ' » – KI</h4>';
+                zeilen.slice(0, 8).forEach(function(z) {
+                    var w = z.replace(/^[-*\d.\s]+/, '').split(/[–—-]/)[0].trim();
+                    h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w) + '\')">' + escHtml(z.replace(/^[-*\d.\s]+/, '')) + '</div>';
+                });
+                pp.innerHTML = h;
+            }).catch(function(e) {
+                var pp = document.getElementById('wk-pop'); if (pp) pp.innerHTML = '<div class="wz-muted">' + escHtml(e.message) + '</div>';
+            });
+        }
+
+        /* --- KI übersetzt --- */
+        function wkUebersetzen(nurAuswahl) {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel', 'error'); return; }
+            var q = state.wkQuelle;
+            var ta = document.getElementById('wk-quelle-ta'); if (ta && ta.value) q = ta.value;
+            if (nurAuswahl) q = nurAuswahl;
+            if (!q || !q.trim()) { showToast('Kein Quelltext', 'warning'); return; }
+            var z = document.getElementById('wk-ziel'); if (z) state.wkZiel = z.value;
+            var s = document.getElementById('wk-sprache'); if (s) state.wkSprache = s.value;
+            state.kiLaeuft = true; render();
+            var sys = kiRegelPrompt()
+              + '\n\nAUFGABE: Übersetze den vorgelegten Text aus dem ' + state.wkSprache + ' in Schweizer Mundart, '
+              + 'streng nach den obigen Schreibregeln.\n'
+              + '- Theatertexte: Sprechernamen (MARIA:) und hochdeutsche Regieanweisungen bleiben UNVERÄNDERT stehen, nur die Repliken werden übersetzt.\n'
+              + '- Bewahre Zeilenumbrüche und Aufbau.\n'
+              + '- Natürliche, sprechbare Mundart, keine Wort-für-Wort-Übertragung.\n'
+              + '- Antworte NUR mit der Übersetzung, ohne Vorrede und ohne Erklärungen.';
+            kiFrage(sys, q, 4000, false).then(function(a) {
+                state.kiLaeuft = false;
+                var vorher = state.wkZiel || '';
+                state.wkZiel = nurAuswahl && vorher ? (vorher + '\n' + a) : a;
+                render();
+                showToast('✓ Übersetzung eingefügt – bitte prüfen', 'success');
+            }).catch(function(e) { state.kiLaeuft = false; render(); showToast(e.message, 'error'); });
+        }
+
+        function wkAbschnitt() {
+            var sel = window.getSelection ? String(window.getSelection()) : '';
+            if (!sel.trim()) { showToast('Nichts markiert', 'warning'); return; }
+            wkUebersetzen(sel);
+        }
+
+
+        function renderExportTab() {
+            var h = '<div class="wz-wrap">';
+            h += '<div class="wz-box"><h3>➕ Neues Wort</h3>'
+               + '<p class="wz-muted" style="margin-bottom:8px;">Direkt ins Wörterbuch aufnehmen – auf Wunsch mit KI-Unterstützung.</p>'
+               + '<button class="btn" onclick="adminNeuerEintrag()">Neues Wort erfassen</button></div>';
+            h += '<div class="wz-box"><h3>🧪 Wörterbuch auf Regeln prüfen</h3>'
+               + '<p class="wz-muted" style="margin-bottom:8px;">Prüft alle Stichwörter und Beispielsätze gegen die Schreibregeln.</p>'
+               + '<button class="btn" onclick="konsistenzPruefen()">Prüfung starten</button>'
+               + '<div id="konsi-out" style="margin-top:12px;"></div></div>';
+            h += '<div class="wz-box"><h3>📥 Export</h3>'
+               + '<button class="btn btn-success" onclick="exportAllCSV()" style="width:100%;padding:12px;">Alle ' + state.totalCount + ' Einträge als CSV</button></div>';
+            h += '</div>';
+            return h;
+        }
+
+        /* ═══════════ Konsistenzprüfung des Wörterbuchs ═══════════ */
+        function konsistenzPruefen() {
+            var out = document.getElementById('konsi-out');
+            if (out) out.innerHTML = '<div class="loading" style="padding:14px;"><div class="spinner"></div></div>';
+            var alle = [], pageSize = 1000, offset = 0;
+            function batch() {
+                return supabaseCall('woerter?select=id,begriff,beispielsatz&limit=' + pageSize + '&offset=' + offset).then(function(d) {
+                    if (d && d.length) { alle = alle.concat(d); offset += pageSize; if (d.length === pageSize) return batch(); }
+                    return alle;
+                });
+            }
+            batch().then(function(rows) {
+                var treffer = [];
+                rows.forEach(function(r) {
+                    ['begriff','beispielsatz'].forEach(function(feld) {
+                        var v = r[feld]; if (!v) return;
+                        String(v).split(/[^A-Za-zÄÖÜäöüßé'’´`-]+/).forEach(function(w) {
+                            if (!w || w.length < 2) return;
+                            var f = regelPruefeWort(w);
+                            f.forEach(function(x) {
+                                if (x.art === 'hinweis') return;   // zu viele Fehlalarme
+                                treffer.push({ id: r.id, begriff: r.begriff, feld: feld, wort: w, regel: x.regel, vorschlag: x.vorschlag });
+                            });
+                        });
+                    });
+                });
+                if (!out) return;
+                if (!treffer.length) { out.innerHTML = '<p style="color:#2f7d32;">✓ Keine Regelverstösse gefunden (' + rows.length + ' Einträge geprüft).</p>'; return; }
+                var h = '<p><b>' + treffer.length + ' Fundstellen</b> in ' + rows.length + ' Einträgen:</p><div class="wz-liste">';
+                treffer.slice(0, 300).forEach(function(t) {
+                    h += '<div class="wz-item"><span class="wz-item-w">' + escHtml(t.wort) + '</span>'
+                       + '<span class="wz-badge wz-b-f">' + escHtml(t.regel) + '</span>'
+                       + '<span class="wz-item-m">in «' + escHtml(t.begriff) + '» (' + t.feld + ')'
+                       + (t.vorschlag ? ' → <b>' + escHtml(t.vorschlag) + '</b>' : '') + '</span>'
+                       + '<button class="wz-mini grau" onclick="showWordDetailById(' + t.id + ')">öffnen</button></div>';
+                });
+                h += '</div>';
+                if (treffer.length > 300) h += '<p class="wz-muted">… weitere ' + (treffer.length - 300) + ' ausgeblendet.</p>';
+                out.innerHTML = h;
+            }).catch(function(e) { if (out) out.innerHTML = '<p style="color:#c62828;">Fehler: ' + escHtml(e.message) + '</p>'; });
+        }
+
         // Admin
         function renderAdmin() {
             var pendingCount = state.pendingChanges.length;
             var tabs = '<div class="tabs">';
             tabs += '<button class="tab-btn' + (state.adminTab === 'freigaben' ? ' active' : '') + '" onclick="changeAdminTab(\'freigaben\')">Freigaben' + (pendingCount > 0 ? '<span class="pending-badge">' + pendingCount + '</span>' : '') + '</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Tabelle</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'ki' ? ' active' : '') + '" onclick="changeAdminTab(\'ki\')">🤖 KI</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'werkstatt' ? ' active' : '') + '" onclick="changeAdminTab(\'werkstatt\')">🔧 Werkstatt</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
             tabs += '<button class="tab-btn" onclick="handleLogout()" style="margin-left:auto;">🔒 Abmelden</button>';
             tabs += '</div>';
             if (state.adminTab === 'freigaben') return tabs + renderFreigaben(pendingCount);
             if (state.adminTab === 'tabelle') return tabs + renderAdminTable();
-            return tabs + '<div class="search-box"><button class="btn btn-success" onclick="exportAllCSV()" style="width:100%;padding:12px;">📥 Export (' + state.totalCount + ')</button></div>';
+            if (state.adminTab === 'pruefen') return tabs + renderPruefen();
+            if (state.adminTab === 'ki') return tabs + renderKI();
+            if (state.adminTab === 'werkstatt') return tabs + renderWerkstatt();
+            return tabs + renderExportTab();
         }
         
         function renderFreigaben(count) {
@@ -1338,6 +2304,19 @@
             if (el) el.addEventListener('input', function(e) { state.filter.mundart = e.target.value; debouncedSearch(); });
             el = document.getElementById('search-edit-begriff');
             if (el) el.addEventListener('keypress', function(e) { if (e.key === 'Enter') searchBegriffToEdit(); });
+            // Werkzeuge
+            el = document.getElementById('pruef-ta');
+            if (el) el.addEventListener('input', function(e) { state.pruefText = e.target.value; });
+            el = document.getElementById('pruef-regie');
+            if (el) el.addEventListener('change', function(e) { state.pruefRegie = e.target.checked; });
+            el = document.getElementById('ki-text');
+            if (el) el.addEventListener('input', function(e) { state.pruefKiText = e.target.value; });
+            el = document.getElementById('wk-ziel');
+            if (el) el.addEventListener('input', function(e) { state.wkZiel = e.target.value; });
+            el = document.getElementById('wk-quelle-ta');
+            if (el) el.addEventListener('input', function(e) { state.wkQuelle = e.target.value; });
+            el = document.getElementById('wk-sprache');
+            if (el) el.addEventListener('change', function(e) { state.wkSprache = e.target.value; });
         }
         
         function render() {
