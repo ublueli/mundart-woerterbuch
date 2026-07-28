@@ -269,13 +269,20 @@
             // Werkzeuge
             pruefText: '',
             pruefRegie: true,
+            pruefUnbekannt: true,
             pruefErgebnis: null,
             pruefKiText: '',
             kiAntwort: '',
+            kiKorrigiert: null,
+            kiAnzahl: 0,
             kiLaeuft: false,
             wkQuelle: '',
             wkZiel: '',
             wkSprache: 'Deutsch',
+            wkVorschlag: null,
+            chatVerlauf: [],
+            chatLaeuft: false,
+            wkBereich: null,
             ki: {
                 key: localStorage.getItem('mw-api-key') || '',
                 modell: localStorage.getItem('mw-modell') || 'claude-sonnet-5',
@@ -1224,7 +1231,10 @@
           + 'sympathisch,sympathie,system,systeme,physik,physisch,analyse,analysiere,hobby,city,story,style,spray,yoga,'
           + 'joghurt,handy,handys,lyrik,lyrisch,mythos,rhythmus,symbol,synonym,synonyme,asyl,crazy,sexy,money,hockey,'
           + 'derby,curry,whisky,yeti,yacht,zylinder,dynamik,dynamisch,hygiene,hymne,pyramide,synagoge,syrup,mayonnaise,'
-          + 'recycling,royal,layout,playmobil,play,replay,display,hydrant,physio,olympia,olympisch,ayurveda,mayor').split(',');
+          + 'recycling,royal,layout,playmobil,play,replay,display,hydrant,physio,olympia,olympisch,ayurveda,mayor,'
+          + 'gymnastik,gymnasium,gymi,symphonie,sinfonie,sympathie,syntax,synode,hysterie,hysterisch,zyklus,zynisch,'
+          + 'hypothek,hypothese,dynastie,dynamit,psychologie,mythologie,ägypten,ägyptisch,krystall,kristall,'
+          + 'typograf,typografie,zypresse,myrte,zyklon,embryo,larynx,pyromane,styropor,polyester,nylon,vinyl').split(',');
 
         var REGEL_ANGLEICH = {
             'ech':'ich','esch':'isch','met':'mit','mech':'mich','sech':'sich','be':'bi','send':'sind','hed':'het',
@@ -1232,7 +1242,7 @@
             'entscholdigong':'Entschuldigung','wösseschaft':'Wüsseschaft','öberchome':'überchome','aso':'also',
             'emol':'emal','frölein':'Fröilein','öber':'öpper','chond':'chunt','vel':'vil',
             'villecht':'villicht','vielecht':'villicht','sösch':'söscht','irged':'irgend','hötzotags':'hüttzutags',
-            'nor':'nur','ehne':'öich','euch':'öich','euer':'öier','euchi':'öiri','euchne':'öichne','üchne':'öichne',
+            'nor':'nur','bispel':'bispil','bischpel':'bispil','ehne':'öich','euch':'öich','euer':'öier','euchi':'öiri','euchne':'öichne','üchne':'öichne',
             'eus':'öis','euse':'öise','eusi':'öisi','eues':'öies','ned':'nid','nöd':'nid','symphatisch':'sympathisch',
             'zsäme':'zäme','gsy':'gsii','gsyn':'gsii','zyt':'ziit','wyt':'wiit'
         };
@@ -1242,7 +1252,14 @@
 
         var REGEL_VORSILBEN = ['ver','be','ge','ent','zer','er','uf','us','ab','aa','ii','vor','über','um','nach','zue','g','b'];
 
-        function regelIstLehnY(w) { return REGEL_Y_OK.indexOf(w.toLowerCase()) >= 0; }
+        // Typische Anfänge griechisch-lateinischer Lehnwörter mit y
+        var REGEL_Y_MUSTER = /^(gym|sym|syn|psy|phy|hyp|hyd|hys|dyn|myth|lyr|zyl|zyn|zyk|kry|styl|asyl|analy|kataly|paraly|typ|poly|pyr|embry)/i;
+
+        function regelIstLehnY(w) {
+            var lw = w.toLowerCase();
+            if (REGEL_Y_OK.indexOf(lw) >= 0) return true;
+            return REGEL_Y_MUSTER.test(lw);
+        }
 
         function regelKasus(orig, neu) {
             if (!orig || !neu) return neu;
@@ -1270,6 +1287,8 @@
         function regelStInnen(w) {
             var lw = w.toLowerCase();
             if (/sch[tp]/i.test(w)) return null;
+            if (regelIstLehnY(w)) return null;              // Fremdwörter unangetastet
+            if (/(ik|ismus|istisch|ion|ianz|ienz)$/i.test(lw)) return null;
             var mm = /[aeiouäöürln]s[tp]/i.exec(w);
             if (!mm) return null;
             var pos = mm.index + 1;
@@ -1347,6 +1366,26 @@
         var pruefFunde = [];          // aktuelle Fundliste
         var pruefBekannt = null;      // Set der bekannten Wörter (aus DB)
 
+        // Prüft, ob ein Wort (oder eine Grundform davon) im Wörterbuch steht
+        function pruefIstBekannt(wort, bekannt) {
+            var w = wort.toLowerCase();
+            if (bekannt.has(w)) return true;
+            if (w.length < 4) return false;
+            var kand = [];
+            // Endungen abschneiden
+            ['e','i','t','s','r','n'].forEach(function(e) { if (w.slice(-1) === e) kand.push(w.slice(0, -1)); });
+            ['er','et','te','ti','ne','en','es','em','ig','st'].forEach(function(e) { if (w.slice(-2) === e) kand.push(w.slice(0, -2)); });
+            ['ere','eri','ete','ige','igi'].forEach(function(e) { if (w.slice(-3) === e) kand.push(w.slice(0, -3)); });
+            // Endungen anhängen
+            kand.push(w + 'e', w + 'en', w + 'i');
+            // i/e-Tausch am Schluss (jedi -> jede, sini -> sine)
+            if (w.slice(-1) === 'i') kand.push(w.slice(0, -1) + 'e');
+            if (w.slice(-1) === 'e') kand.push(w.slice(0, -1) + 'i');
+            for (var i = 0; i < kand.length; i++)
+                if (kand[i].length >= 3 && bekannt.has(kand[i])) return true;
+            return false;
+        }
+
         function pruefLadeWortschatz() {
             if (pruefBekannt) return Promise.resolve(pruefBekannt);
             var alle = new Set();
@@ -1391,7 +1430,7 @@
                         var f = regelPruefeWort(t);
                         var art = null, info = null;
                         if (f.length) { art = f[0].art; info = f[0]; }
-                        else if (!bekannt.has(t.toLowerCase())) { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                        else if (state.pruefUnbekannt !== false && !pruefIstBekannt(t, bekannt)) { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
                         if (!art) { html += escHtml(t); return; }
                         var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis') ? 'wz-angleich' : 'wz-neu';
                         funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
@@ -1485,6 +1524,7 @@
             h += '<div class="wz-row">';
             h += '<button class="btn" onclick="pruefText()">🔍 Prüfen</button>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-regie"' + (state.pruefRegie !== false ? ' checked' : '') + '> Regieanweisungen überspringen</label>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-unbekannt"' + (state.pruefUnbekannt !== false ? ' checked' : '') + '> unbekannte Wörter markieren</label>';
             if (e) h += '<button class="wz-mini grau" onclick="pruefKopieren()">📋 Text kopieren</button>';
             if (e) h += '<button class="wz-mini grau" onclick="pruefZuruecksetzen()">✕ Ergebnis schliessen</button>';
             h += '</div>';
@@ -1636,12 +1676,16 @@
 
         // Zentraler API-Aufruf
         function kiFrage(system, user, maxTokens, mitWebsuche) {
+            return kiFrageVerlauf(system, [{ role: 'user', content: user }], maxTokens, mitWebsuche);
+        }
+
+        function kiFrageVerlauf(system, messages, maxTokens, mitWebsuche) {
             if (!kiBereit()) return Promise.reject(new Error('Kein API-Schlüssel hinterlegt'));
             var body = {
                 model: state.ki.modell,
                 max_tokens: maxTokens || 2000,
                 system: system,
-                messages: [{ role: 'user', content: user }]
+                messages: messages
             };
             if (mitWebsuche && state.ki.websuche)
                 body.tools = [{ type: 'web_search_20250305', name: 'web_search', max_uses: 4 }];
@@ -1760,6 +1804,78 @@
             }).catch(function(e) { showToast(e.message, 'error'); });
         }
 
+        /* ---- Korrigierten Text aus der KI-Tabelle erzeugen ---- */
+        function kiKorrekturenLesen() {
+            var a = state.kiAntwort || '';
+            var paare = [];
+            a.split('\n').forEach(function(z) {
+                var t = z.trim();
+                if (t.indexOf('|') !== 0) return;
+                var sp = t.replace(/^\||\|$/g, '').split('|');
+                if (sp.length < 3) return;
+                var wort = sp[0].trim();
+                var vor  = sp[2].trim().replace(/^\*\*|\*\*$/g, '');
+                if (!wort || !vor) return;
+                if (/^wort$/i.test(wort)) return;
+                if (/^[-: ]+$/.test(wort)) return;
+                if (wort === vor) return;
+                if (/[ ,;(]/.test(vor) && vor.split(' ').length > 3) return;   // Kommentar statt Wort
+                var da = false;
+                paare.forEach(function(p) { if (p[0] === wort) da = true; });
+                if (!da) paare.push([wort, vor]);
+            });
+            return paare;
+        }
+
+        // Gross-/Kleinschreibung des Originals berücksichtigen
+        function kiKasus(orig, neu) {
+            if (!orig || !neu) return neu;
+            var c = orig.charAt(0);
+            var gross = (c === c.toUpperCase() && c !== c.toLowerCase());
+            if (gross) return neu.charAt(0).toUpperCase() + neu.slice(1);
+            if (/^[DSZ]\s/.test(neu)) return neu.charAt(0).toLowerCase() + neu.slice(1);  // abgetrennter Artikel
+            return neu;
+        }
+
+        function kiKorrekturenAnwenden() {
+            var t = state.pruefKiText || '';
+            if (!t.trim()) { showToast('Kein Text vorhanden', 'warning'); return; }
+            var paare = kiKorrekturenLesen();
+            if (!paare.length) { showToast('Keine anwendbaren Korrekturen gefunden', 'warning'); return; }
+            var n = 0;
+            paare.forEach(function(p) {
+                var wort = p[0], vor = p[1];
+                var esc = wort.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                var vorne = /^[A-Za-zÄÖÜäöüß]/.test(wort) ? '(^|[^A-Za-zÄÖÜäöüß])' : '()';
+                var hinten = /[A-Za-zÄÖÜäöüß]$/.test(wort) ? '(?![A-Za-zÄÖÜäöüß])' : '';
+                var re = new RegExp(vorne + esc + hinten, 'gi');
+                t = t.replace(re, function(all, pre) {
+                    var orig = all.slice((pre || '').length);
+                    n++;
+                    return (pre || '') + kiKasus(orig, vor);
+                });
+            });
+            state.kiKorrigiert = t;
+            state.kiAnzahl = n;
+            render();
+            showToast(n + ' Stellen korrigiert', 'success');
+        }
+
+        function kiKorrigiertKopieren() {
+            var t = state.kiKorrigiert || '';
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function() { showToast('Korrigierter Text kopiert', 'success'); });
+            else showToast('Kopieren nicht möglich', 'error');
+        }
+
+        function kiKorrigiertUebernehmen() {
+            if (!state.kiKorrigiert) return;
+            state.pruefKiText = state.kiKorrigiert;
+            state.kiKorrigiert = null;
+            state.kiAntwort = '';
+            render();
+            showToast('Text ersetzt – du kannst erneut prüfen', 'success');
+        }
+
         function renderKI() {
             var k = state.ki;
             var h = '<div class="wz-wrap">';
@@ -1796,7 +1912,21 @@
             h += '<div class="wz-row"><button class="btn" onclick="kiTextPruefen()"' + (kiBereit() ? '' : ' disabled') + '>🤖 Mit KI prüfen</button>';
             h += '<span class="wz-muted">Die KI kennt alle Schreibregeln und beurteilt auch Zweifelsfälle.</span></div>';
             if (state.kiLaeuft) h += '<div class="loading" style="padding:20px;"><div class="spinner"></div></div>';
-            if (state.kiAntwort) h += '<div class="wz-result" style="line-height:1.6;">' + kiMarkdown(state.kiAntwort) + '</div>';
+            if (state.kiAntwort) {
+                h += '<div class="wz-result" style="line-height:1.6;">' + kiMarkdown(state.kiAntwort) + '</div>';
+                var anz = kiKorrekturenLesen().length;
+                h += '<div class="wz-row">';
+                h += '<button class="btn" onclick="kiKorrekturenAnwenden()"' + (anz ? '' : ' disabled') + '>✓ Text korrigieren' + (anz ? ' (' + anz + ')' : '') + '</button>';
+                h += '<span class="wz-muted">Wendet alle Vorschläge aus der Tabelle auf den Text oben an.</span></div>';
+            }
+            if (state.kiKorrigiert) {
+                h += '<div style="margin-top:14px;"><label class="wz-muted">Korrigierter Text (' + (state.kiAnzahl || 0) + ' Stellen geändert)</label>';
+                h += '<textarea class="wz-ta" id="ki-korrigiert" readonly>' + escHtml(state.kiKorrigiert) + '</textarea>';
+                h += '<div class="wz-row">';
+                h += '<button class="btn" onclick="kiKorrigiertKopieren()">📋 Kopieren</button>';
+                h += '<button class="wz-mini grau" onclick="kiKorrigiertUebernehmen()">↑ Als neuen Ausgangstext übernehmen</button>';
+                h += '</div></div>';
+            }
             h += '</div>';
 
             // --- Wort anreichern ---
@@ -1898,57 +2028,169 @@
             }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
         }
 
+
+        /* ═══════════ RECHERCHE & GESPRÄCH ═══════════ */
+
+        function kiChatSystem() {
+            return kiRegelPrompt() + '\n\n'
+              + 'ROLLE: Du bist Gesprächspartner für einen Mundart-Übersetzer. '
+              + 'Er sucht Wörter, Wendungen und Bilder für Schweizer Mundart, oft weil ein hochdeutsches Wort keine direkte Entsprechung hat.\n'
+              + 'ARBEITSWEISE:\n'
+              + '- Denk in Bedeutungen, nicht in Eins-zu-eins-Übersetzungen. Wenn es kein Wort gibt, schlag Umschreibungen, Bilder oder Redewendungen vor.\n'
+              + '- Nenne mehrere Möglichkeiten mit kurzem Hinweis auf Ton und Region.\n'
+              + '- Wenn du im Netz nachschlägst, sag knapp, worauf du dich stützt.\n'
+              + '- Halte dich an die Schreibregeln oben. Antworte knapp und in Fliesstext, ohne Vorrede.';
+        }
+
+        function kiChatSenden(vorgabe) {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            var el = document.getElementById('wk-chat-eingabe');
+            var frage = vorgabe || (el ? el.value.trim() : '');
+            if (!frage) { showToast('Bitte eine Frage eingeben', 'warning'); return; }
+            state.chatVerlauf = state.chatVerlauf || [];
+            state.chatVerlauf.push({ role: 'user', content: frage });
+            state.chatLaeuft = true;
+            render();
+            var msgs = state.chatVerlauf.slice(-12).map(function (m) { return { role: m.role, content: m.content }; });
+            kiFrageVerlauf(kiChatSystem(), msgs, 1600, true).then(function (a) {
+                state.chatVerlauf.push({ role: 'assistant', content: a || '(keine Antwort)' });
+                state.chatLaeuft = false; render();
+            }).catch(function (e) {
+                state.chatVerlauf.push({ role: 'assistant', content: '⚠️ ' + e.message });
+                state.chatLaeuft = false; render();
+            });
+        }
+
+        function kiChatLeeren() {
+            if (state.chatVerlauf && state.chatVerlauf.length && !confirm('Gespräch löschen?')) return;
+            state.chatVerlauf = []; render();
+        }
+
+        // Aus dem Wort-Fenster heraus über ein Wort sprechen
+        function wkBesprechen(wort) {
+            wkPopZu();
+            state.adminTab = 'werkstatt';
+            var f = 'Ich übersetze aus dem ' + state.wkSprache + ' in Schweizer Mundart und finde für «' + wort
+                  + '» kein treffendes Mundartwort. Welche Möglichkeiten gibt es – auch Umschreibungen, Bilder oder Redewendungen? '
+                  + 'Schau bei Bedarf im Netz nach, wie das in Mundarttexten gelöst wird.';
+            kiChatSenden(f);
+        }
+
+        function renderChat() {
+            var h = '<div class="wz-box"><h3>💬 Recherche &amp; Gespräch</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Für Wörter ohne direkte Entsprechung – die KI sucht Umschreibungen und schaut auf Wunsch im Netz nach.'
+               + (state.ki.websuche ? ' <b>Web-Recherche ist eingeschaltet.</b>' : ' <i>Web-Recherche ist aus (Reiter KI).</i>') + '</p>';
+
+            var v = state.chatVerlauf || [];
+            if (v.length) {
+                h += '<div class="wz-result" style="max-height:44vh;overflow-y:auto;line-height:1.6;">';
+                v.forEach(function (m) {
+                    if (m.role === 'user')
+                        h += '<div style="margin:0 0 10px;"><b style="color:var(--accent-color);">Du:</b> ' + escHtml(m.content) + '</div>';
+                    else
+                        h += '<div style="margin:0 0 16px;padding-left:10px;border-left:3px solid var(--border-color);">' + kiMarkdown(m.content) + '</div>';
+                });
+                h += '</div>';
+            }
+            if (state.chatLaeuft) h += '<div class="loading" style="padding:14px;"><div class="spinner"></div></div>';
+
+            h += '<div class="wz-row" style="margin-top:10px;">';
+            h += '<input class="input" id="wk-chat-eingabe" placeholder="z.B. Wie sagt man «Wildnis» auf Mundart?" style="flex:1;min-width:240px;">';
+            h += '<button class="btn" onclick="kiChatSenden()"' + (kiBereit() ? '' : ' disabled') + '>Fragen</button>';
+            if (v.length) h += '<button class="wz-mini grau" onclick="kiChatLeeren()">✕ Gespräch löschen</button>';
+            h += '</div>';
+            h += '</div>';
+            return h;
+        }
+
         /* ═══════════ WERKSTATT (Übersetzungs-Werkbank) ═══════════ */
 
-        var wkTreffer = null;
+        var WK_SPRACHEN = ['Deutsch','Englisch','Französisch','Italienisch','Spanisch','Niederländisch',
+                           'Portugiesisch','Latein','Altgriechisch','Russisch','Tschechisch','Polnisch',
+                           'Schwedisch','Dänisch','Norwegisch','Ungarisch','Rumänisch','Türkisch'];
+
+        var WK_UEBERARBEITEN = [
+            ['kurz',      '✂️ Sätze kürzen',      'Zerlege lange Schachtelsätze in mehrere kurze, sprechbare Sätze. Der Inhalt bleibt vollständig erhalten, nichts wird weggelassen.'],
+            ['sprechbar', '🗣 Sprechbar machen',  'Mach den Text natürlich sprechbar, so wie man auf der Bühne redet. Weg mit Schriftsprach-Konstruktionen, Partizipialkonstruktionen und Verschachtelungen.'],
+            ['wendung',   '🔁 Andere Wendung',    'Schlage für die vorgelegte Stelle 3–5 alternative Formulierungen vor. Antworte als nummerierte Liste, ohne Vorrede.'],
+            ['regeln',    '📏 Auf Regeln trimmen','Korrigiere den Text streng nach den Schreibregeln. Der Wortlaut bleibt, nur die Schreibweise wird angepasst.'],
+            ['knapp',     '📉 Straffen',          'Straffe den Text: weniger Füllwörter, direktere Sätze. Ton und Inhalt bleiben.']
+        ];
 
         function renderWerkstatt() {
             var h = '<div class="wz-wrap">';
             h += '<div class="wz-box"><h3>🔧 Übersetzungs-Werkbank</h3>';
             h += '<div class="wz-row" style="margin:0 0 10px;">';
             h += '<label class="wz-muted">Ausgangssprache</label>';
-            h += '<select class="input" id="wk-sprache" style="max-width:180px;">';
-            ['Deutsch','Englisch','Französisch'].forEach(function(s) {
-                h += '<option value="' + s + '"' + (state.wkSprache === s ? ' selected' : '') + '>' + s + '</option>';
+            h += '<select class="input" id="wk-sprache" style="max-width:190px;">';
+            WK_SPRACHEN.forEach(function(s) {
+                h += '<option value="' + escHtml(s) + '"' + (state.wkSprache === s ? ' selected' : '') + '>' + escHtml(s) + '</option>';
             });
+            if (WK_SPRACHEN.indexOf(state.wkSprache) < 0)
+                h += '<option value="' + escHtml(state.wkSprache) + '" selected>' + escHtml(state.wkSprache) + '</option>';
             h += '</select>';
+            h += '<input class="input" id="wk-sprache-frei" placeholder="andere Sprache…" style="max-width:150px;">';
             h += '<button class="wz-mini grau" onclick="wkTextLaden()">📂 Datei laden</button>';
             h += '<input type="file" id="wk-datei" accept=".txt,.md,text/plain" style="display:none;">';
             h += '<button class="wz-mini grau" onclick="wkQuelleUebernehmen()">↻ Quelltext übernehmen</button>';
-            h += '<span class="wz-muted">Rechtsklick auf ein Wort links zeigt die Mundart-Entsprechungen.</span>';
             h += '</div>';
+            h += '<p class="wz-muted" style="margin:0 0 10px;">Rechtsklick auf ein Wort links sucht die <b>sinngemässen</b> Mundart-Entsprechungen – nicht die wörtliche Übersetzung.</p>';
 
             h += '<div class="wk-grid">';
-            // linke Spalte
             h += '<div><label class="wz-muted">Quelltext (' + escHtml(state.wkSprache) + ')</label>';
-            if (state.wkQuelle && state.wkQuelle.trim()) {
+            if (state.wkQuelle && state.wkQuelle.trim())
                 h += '<div class="wk-src" id="wk-src" oncontextmenu="return wkKontext(event)">' + wkQuelleHtml(state.wkQuelle) + '</div>';
-            } else {
-                h += '<textarea class="wz-ta wk-ta" id="wk-quelle-ta" placeholder="Deutschen, englischen oder französischen Text hier einfügen…"></textarea>';
-            }
+            else
+                h += '<textarea class="wz-ta wk-ta" id="wk-quelle-ta" placeholder="Text in beliebiger Sprache hier einfügen…"></textarea>';
             h += '</div>';
-            // rechte Spalte
             h += '<div><label class="wz-muted">Mundart-Übersetzung</label>';
             h += '<textarea class="wz-ta wk-ta" id="wk-ziel" placeholder="Hier entsteht die Mundartfassung…">' + escHtml(state.wkZiel || '') + '</textarea></div>';
             h += '</div>';
 
             h += '<div class="wz-row">';
-            h += '<button class="btn" onclick="wkUebersetzen()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>🤖 Von der KI übersetzen lassen</button>';
+            h += '<button class="btn" onclick="wkUebersetzen()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>🤖 Übersetzen</button>';
             h += '<button class="wz-mini grau" onclick="wkAbschnitt()"' + (kiBereit() ? '' : ' disabled') + '>Nur markierten Abschnitt</button>';
             h += '<button class="wz-mini grau" onclick="wkZielPruefen()">🔍 Übersetzung prüfen</button>';
             h += '<button class="wz-mini grau" onclick="wkZielKopieren()">📋 Kopieren</button>';
             h += '<button class="wz-mini grau" onclick="wkLeeren()">✕ Leeren</button>';
             h += '</div>';
             if (state.kiLaeuft) h += '<div class="loading" style="padding:16px;"><div class="spinner"></div></div>';
-            h += '</div></div>';
+            h += '</div>';
+
+            // --- Überarbeiten ---
+            h += '<div class="wz-box"><h3>✍️ Übersetzung überarbeiten</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Wirkt auf die <b>markierte Stelle</b> im rechten Feld – ohne Markierung auf den ganzen Text.</p>';
+            h += '<div class="wz-row" style="margin:0 0 10px;">';
+            WK_UEBERARBEITEN.forEach(function(a) {
+                h += '<button class="wz-mini grau" onclick="wkUeberarbeiten(\'' + a[0] + '\')"' + (kiBereit() ? '' : ' disabled') + '>' + a[1] + '</button>';
+            });
+            h += '</div>';
+            h += '<div class="wz-row">';
+            h += '<input class="input" id="wk-auftrag" placeholder="oder eigener Auftrag, z.B. «mach es derber, weniger höflich»" style="flex:1;min-width:240px;">';
+            h += '<button class="btn" onclick="wkUeberarbeiten(\'frei\')"' + (kiBereit() ? '' : ' disabled') + '>Ausführen</button>';
+            h += '</div>';
+            if (state.wkVorschlag) {
+                h += '<div style="margin-top:12px;"><label class="wz-muted">Vorschlag</label>';
+                h += '<div class="wz-result" style="line-height:1.6;">' + kiMarkdown(state.wkVorschlag) + '</div>';
+                h += '<div class="wz-row">';
+                h += '<button class="btn" onclick="wkVorschlagUebernehmen()">✓ In die Übersetzung übernehmen</button>';
+                h += '<button class="wz-mini grau" onclick="wkVorschlagKopieren()">📋 Kopieren</button>';
+                h += '<button class="wz-mini grau" onclick="state.wkVorschlag=null;render();">✕ Verwerfen</button>';
+                h += '</div></div>';
+            }
+            h += '</div>';
+
+            h += renderChat();
+
+            h += '</div>';
             return h;
         }
 
         function wkQuelleHtml(txt) {
-            var teile = String(txt).split(/([A-Za-zÄÖÜäöüßÀ-ÿ]+)/);
+            var teile = String(txt).split(/([A-Za-zÄÖÜäöüßÀ-ÿ']+)/);
             var out = '';
             teile.forEach(function(t) {
-                if (/^[A-Za-zÄÖÜäöüßÀ-ÿ]+$/.test(t) && t.length > 1)
+                if (/^[A-Za-zÄÖÜäöüßÀ-ÿ']+$/.test(t) && t.length > 1)
                     out += '<span class="wk-w" data-w="' + escHtml(t) + '">' + escHtml(t) + '</span>';
                 else out += escHtml(t);
             });
@@ -1957,10 +2199,16 @@
 
         function wkQuelleUebernehmen() {
             var ta = document.getElementById('wk-quelle-ta');
-            if (ta) { state.wkQuelle = ta.value; }
+            if (ta) state.wkQuelle = ta.value;
             var z = document.getElementById('wk-ziel'); if (z) state.wkZiel = z.value;
-            var s = document.getElementById('wk-sprache'); if (s) state.wkSprache = s.value;
+            wkSpracheLesen();
             render();
+        }
+
+        function wkSpracheLesen() {
+            var frei = document.getElementById('wk-sprache-frei');
+            if (frei && frei.value.trim()) { state.wkSprache = frei.value.trim(); return; }
+            var s = document.getElementById('wk-sprache'); if (s) state.wkSprache = s.value;
         }
 
         function wkTextLaden() {
@@ -1978,7 +2226,7 @@
 
         function wkLeeren() {
             if (!confirm('Beide Felder leeren?')) return;
-            state.wkQuelle = ''; state.wkZiel = ''; wkPopZu(); render();
+            state.wkQuelle = ''; state.wkZiel = ''; state.wkVorschlag = null; wkPopZu(); render();
         }
 
         function wkZielKopieren() {
@@ -1997,70 +2245,125 @@
             setTimeout(pruefText, 60);
         }
 
-        /* --- Rechtsklick: Wörterbuch befragen --- */
+        /* --- Rechtsklick: sinngemässe Entsprechungen --- */
         function wkKontext(ev) {
             var el = ev.target;
             if (!el || !el.classList || !el.classList.contains('wk-w')) return true;
             ev.preventDefault();
-            var wort = el.getAttribute('data-w') || '';
-            wkPopZeigen(ev.clientX, ev.clientY, wort);
+            wkPopZeigen(ev.clientX, ev.clientY, el.getAttribute('data-w') || '');
             return false;
         }
 
         function wkPopZu() { var p = document.getElementById('wk-pop'); if (p) p.remove(); }
+        function wkPopZuEinmal() { wkPopZu(); document.removeEventListener('click', wkPopZuEinmal); }
+
+        function wkPopSetzen(html) { var p = document.getElementById('wk-pop'); if (p) p.innerHTML = html; }
 
         function wkPopZeigen(x, y, wort) {
             wkPopZu();
             var d = document.createElement('div');
             d.className = 'wk-pop'; d.id = 'wk-pop';
             d.style.left = Math.min(x, window.innerWidth - 340) + 'px';
-            d.style.top = Math.min(y, window.innerHeight - 320) + 'px';
+            d.style.top = Math.min(y, window.innerHeight - 340) + 'px';
             d.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">suche…</div>';
             document.body.appendChild(d);
             setTimeout(function() { document.addEventListener('click', wkPopZuEinmal); }, 10);
 
-            var q = encodeURIComponent(wort);
-            Promise.all([
-                supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&synonyme=ilike.*' + q + '*&limit=12&order=begriff.asc'),
-                supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&begriff=ilike.' + q + '&limit=4')
-            ]).then(function(r) {
-                var liste = (r[1] || []).concat(r[0] || []);
-                var seen = {}, res = [];
-                liste.forEach(function(w) { var k = w.begriff.toLowerCase(); if (!seen[k]) { seen[k] = 1; res.push(w); } });
-                // Direkttreffer nach oben
-                res.sort(function(a, b) { return wkRang(b, wort) - wkRang(a, wort); });
-                var h = '<h4>« ' + escHtml(wort) + ' »</h4>';
-                if (!res.length) {
-                    h += '<div class="wz-muted">Keine Entsprechung gefunden.</div>';
-                    if (kiBereit()) h += '<button class="wz-mini" style="margin-top:8px;" onclick="wkKiVorschlag(\'' + escAttr(wort) + '\')">🤖 KI fragen</button>';
-                } else {
-                    res.slice(0, 10).forEach(function(w) {
-                        h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w.begriff) + '\')">';
-                        h += '<b>' + escHtml(w.begriff) + '</b>' + (wkRang(w, wort) === 2 ? ' <span style="color:var(--accent-color);">★</span>' : '');
-                        if (w.wortart) h += ' <small style="display:inline;">' + escHtml(w.wortart) + '</small>';
-                        if (w.nebenform) h += '<small>Partizip: ' + escHtml(w.nebenform) + '</small>';
-                        if (w.bedeutung) h += '<small>' + escHtml(String(w.bedeutung).slice(0, 90)) + '</small>';
-                        h += '</div>';
-                    });
-                    if (kiBereit()) h += '<button class="wz-mini grau" style="margin-top:8px;" onclick="wkKiVorschlag(\'' + escAttr(wort) + '\')">🤖 KI fragen</button>';
-                }
-                var p = document.getElementById('wk-pop'); if (p) p.innerHTML = h;
+            var istDeutsch = (state.wkSprache === 'Deutsch');
+            if (istDeutsch) {
+                wkWoerterbuchSuche([wort], wort, null);
+            } else if (kiBereit()) {
+                wkPopSetzen('<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">' + escHtml(state.wkSprache) + ' → Bedeutung wird ermittelt…</div>');
+                var sys = 'Du bist Übersetzer und kennst Schweizer Mundart. '
+                    + 'Für das vorgelegte Wort aus dem ' + state.wkSprache + ' lieferst du die BEDEUTUNG, nicht eine wörtliche Übertragung. '
+                    + 'Antworte ausschliesslich als JSON: {"deutsch":["…","…"],"mundart":["…","…"]} '
+                    + 'wobei "deutsch" 2–4 hochdeutsche Entsprechungen enthält und "mundart" 2–5 sinngemässe Schweizer Mundart-Wörter '
+                    + 'in schriftnaher Schreibweise (ii statt y, kein ß, kein Apostroph).';
+                kiFrage(sys, state.wkSprache + ': ' + wort, 400, false).then(function(a) {
+                    var o = kiJson(a) || {};
+                    var deutsch = o.deutsch || [];
+                    var mundart = o.mundart || [];
+                    if (!deutsch.length && !mundart.length) { wkPopSetzen('<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">Nichts gefunden.</div>'); return; }
+                    wkWoerterbuchSuche(deutsch, wort, mundart);
+                }).catch(function(e) {
+                    wkPopSetzen('<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">' + escHtml(e.message) + '</div>');
+                });
+            } else {
+                wkPopSetzen('<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">Für ' + escHtml(state.wkSprache)
+                    + ' braucht es den API-Schlüssel (Reiter KI), damit die Bedeutung bestimmt werden kann.</div>');
+            }
+        }
+
+        // Sucht im Wörterbuch nach allen deutschen Begriffen und zeigt das Ergebnis
+        function wkWoerterbuchSuche(deutscheWoerter, original, kiMundart) {
+            var anfragen = [];
+            deutscheWoerter.slice(0, 4).forEach(function(d) {
+                var q = encodeURIComponent(String(d).trim());
+                if (!q) return;
+                anfragen.push(supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&synonyme=ilike.*' + q + '*&limit=10&order=begriff.asc'));
+                anfragen.push(supabaseCall('woerter?select=begriff,wortart,synonyme,bedeutung,nebenform&begriff=ilike.' + q + '&limit=3'));
+            });
+            if (!anfragen.length) { wkZeigeTreffer([], original, kiMundart, deutscheWoerter); return; }
+            Promise.all(anfragen).then(function(res) {
+                var alle = [];
+                res.forEach(function(r) { (r || []).forEach(function(w) { alle.push(w); }); });
+                var seen = {}, liste = [];
+                alle.forEach(function(w) { var k = w.begriff.toLowerCase(); if (!seen[k]) { seen[k] = 1; liste.push(w); } });
+                liste.sort(function(a, b) { return wkRang(b, deutscheWoerter) - wkRang(a, deutscheWoerter); });
+                wkZeigeTreffer(liste, original, kiMundart, deutscheWoerter);
             }).catch(function(e) {
-                var p = document.getElementById('wk-pop'); if (p) p.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">Fehler: ' + escHtml(e.message) + '</div>';
+                wkPopSetzen('<h4>« ' + escHtml(original) + ' »</h4><div class="wz-muted">Fehler: ' + escHtml(e.message) + '</div>');
             });
         }
 
-        function wkRang(w, such) {
-            var s = String(such).toLowerCase();
-            if (String(w.begriff).toLowerCase() === s) return 3;
-            var syn = String(w.synonyme || '').toLowerCase().split(',').map(function(x){return x.trim();});
-            if (syn.length && syn[0] === s) return 2;
-            return 1;
+        function wkZeigeTreffer(liste, original, kiMundart, deutscheWoerter) {
+            var h = '<h4>« ' + escHtml(original) + ' »</h4>';
+            if (deutscheWoerter && deutscheWoerter.length && state.wkSprache !== 'Deutsch')
+                h += '<div class="wz-muted" style="margin-bottom:8px;">Bedeutung: ' + escHtml(deutscheWoerter.join(', ')) + '</div>';
+
+            if (liste.length) {
+                h += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:4px;">Aus dem Wörterbuch</div>';
+                liste.slice(0, 10).forEach(function(w) {
+                    h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w.begriff) + '\')">';
+                    h += '<b>' + escHtml(w.begriff) + '</b>' + (wkRang(w, deutscheWoerter) >= 2 ? ' <span style="color:var(--accent-color);">★</span>' : '');
+                    if (w.wortart) h += ' <small style="display:inline;">' + escHtml(w.wortart) + '</small>';
+                    if (w.nebenform) h += '<small>Partizip / Mehrzahl: ' + escHtml(w.nebenform) + '</small>';
+                    if (w.bedeutung) h += '<small>' + escHtml(String(w.bedeutung).slice(0, 90)) + '</small>';
+                    h += '</div>';
+                });
+            } else {
+                h += '<div class="wz-muted">Nichts im Wörterbuch.</div>';
+            }
+
+            if (kiMundart && kiMundart.length) {
+                h += '<div style="font-size:12px;color:var(--text-muted);margin:10px 0 4px;">Vorschläge der KI</div>';
+                kiMundart.forEach(function(w) {
+                    var s = String(w);
+                    h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(s) + '\')">' + escHtml(s) + '</div>';
+                });
+            }
+            if (kiBereit()) {
+                h += '<div class="wz-row" style="margin-top:10px;">';
+                h += '<button class="wz-mini grau" onclick="wkKiVorschlag(\'' + escAttr(original) + '\')">🤖 Mehr Vorschläge</button>';
+                h += '<button class="wz-mini" onclick="wkBesprechen(\'' + escAttr(original) + '\')">💬 Besprechen</button>';
+                h += '</div>';
+            }
+            wkPopSetzen(h);
         }
 
-        function escAttr(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+        function wkRang(w, suchListe) {
+            var syn = String(w.synonyme || '').toLowerCase().split(',').map(function(x) { return x.trim(); });
+            var beg = String(w.begriff).toLowerCase();
+            var rang = 1;
+            (suchListe || []).forEach(function(s) {
+                var ss = String(s).toLowerCase().trim();
+                if (beg === ss) rang = Math.max(rang, 3);
+                else if (syn.length && syn[0] === ss) rang = Math.max(rang, 2);
+            });
+            return rang;
+        }
 
-        function wkPopZuEinmal() { wkPopZu(); document.removeEventListener('click', wkPopZuEinmal); }
+        function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
         function wkEinfuegen(wort) {
             var z = document.getElementById('wk-ziel');
@@ -2074,23 +2377,19 @@
 
         function wkKiVorschlag(wort) {
             if (!kiBereit()) { showToast('Kein API-Schlüssel', 'error'); return; }
-            var p = document.getElementById('wk-pop');
-            if (p) p.innerHTML = '<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">KI denkt nach…</div>';
-            var sys = kiRegelPrompt() + '\n\nAUFGABE: Nenne für das vorgegebene Wort 3–6 mögliche Schweizer Mundart-Entsprechungen '
-                    + 'in unserer Schreibweise. Antworte nur als kurze Liste «Wort – knappe Erklärung», ohne Vorrede.';
+            wkPopSetzen('<h4>« ' + escHtml(wort) + ' »</h4><div class="wz-muted">KI denkt nach…</div>');
+            var sys = kiRegelPrompt() + '\n\\nAUFGABE: Nenne für das vorgelegte Wort 3–6 sinngemässe Schweizer Mundart-Entsprechungen '
+                    + 'in unserer Schreibweise. Antworte nur als Liste «Wort – knappe Erklärung», ohne Vorrede.';
             kiFrage(sys, state.wkSprache + ': ' + wort, 400, false).then(function(a) {
-                var pp = document.getElementById('wk-pop');
-                if (!pp) return;
-                var zeilen = String(a).split('\n').filter(function(z){ return z.trim(); });
+                var zeilen = String(a).split('\n').filter(function(z) { return z.trim(); });
                 var h = '<h4>« ' + escHtml(wort) + ' » – KI</h4>';
                 zeilen.slice(0, 8).forEach(function(z) {
-                    var w = z.replace(/^[-*\d.\s]+/, '').split(/[–—-]/)[0].trim();
-                    h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w) + '\')">' + escHtml(z.replace(/^[-*\d.\s]+/, '')) + '</div>';
+                    var rein = z.replace(/^[-*\\d.\\s]+/, '');
+                    var w = rein.split(/[–—-]/)[0].trim();
+                    h += '<div class="wk-tref" onclick="wkEinfuegen(\'' + escAttr(w) + '\')">' + escHtml(rein) + '</div>';
                 });
-                pp.innerHTML = h;
-            }).catch(function(e) {
-                var pp = document.getElementById('wk-pop'); if (pp) pp.innerHTML = '<div class="wz-muted">' + escHtml(e.message) + '</div>';
-            });
+                wkPopSetzen(h);
+            }).catch(function(e) { wkPopSetzen('<div class="wz-muted">' + escHtml(e.message) + '</div>'); });
         }
 
         /* --- KI übersetzt --- */
@@ -2098,22 +2397,23 @@
             if (!kiBereit()) { showToast('Kein API-Schlüssel', 'error'); return; }
             var q = state.wkQuelle;
             var ta = document.getElementById('wk-quelle-ta'); if (ta && ta.value) q = ta.value;
-            if (nurAuswahl) q = nurAuswahl;
+            if (typeof nurAuswahl === 'string' && nurAuswahl) q = nurAuswahl;
             if (!q || !q.trim()) { showToast('Kein Quelltext', 'warning'); return; }
             var z = document.getElementById('wk-ziel'); if (z) state.wkZiel = z.value;
-            var s = document.getElementById('wk-sprache'); if (s) state.wkSprache = s.value;
+            wkSpracheLesen();
             state.kiLaeuft = true; render();
             var sys = kiRegelPrompt()
-              + '\n\nAUFGABE: Übersetze den vorgelegten Text aus dem ' + state.wkSprache + ' in Schweizer Mundart, '
-              + 'streng nach den obigen Schreibregeln.\n'
-              + '- Theatertexte: Sprechernamen (MARIA:) und hochdeutsche Regieanweisungen bleiben UNVERÄNDERT stehen, nur die Repliken werden übersetzt.\n'
-              + '- Bewahre Zeilenumbrüche und Aufbau.\n'
-              + '- Natürliche, sprechbare Mundart, keine Wort-für-Wort-Übertragung.\n'
+              + '\n\\nAUFGABE: Übersetze den Text aus dem ' + state.wkSprache + ' in Schweizer Mundart, streng nach den obigen Schreibregeln.\n'
+              + '- SINNGEMÄSS übersetzen, nicht Wort für Wort. Gesprochene Mundart, keine Schriftsprache.\n'
+              + '- Lange Schachtelsätze in mehrere kurze, sprechbare Sätze zerlegen. Der Inhalt bleibt vollständig.\n'
+              + '- Partizipial- und Genitivkonstruktionen auflösen, die es in der gesprochenen Mundart nicht gibt.\n'
+              + '- Theatertexte: Sprechernamen und hochdeutsche Regieanweisungen bleiben UNVERÄNDERT stehen.\n'
+              + '- Zeilenumbrüche und Aufbau bewahren.\n'
               + '- Antworte NUR mit der Übersetzung, ohne Vorrede und ohne Erklärungen.';
             kiFrage(sys, q, 4000, false).then(function(a) {
                 state.kiLaeuft = false;
                 var vorher = state.wkZiel || '';
-                state.wkZiel = nurAuswahl && vorher ? (vorher + '\n' + a) : a;
+                state.wkZiel = (typeof nurAuswahl === 'string' && nurAuswahl && vorher) ? (vorher + '\n' + a) : a;
                 render();
                 showToast('✓ Übersetzung eingefügt – bitte prüfen', 'success');
             }).catch(function(e) { state.kiLaeuft = false; render(); showToast(e.message, 'error'); });
@@ -2125,6 +2425,57 @@
             wkUebersetzen(sel);
         }
 
+        /* --- Übersetzung überarbeiten --- */
+        function wkAuswahlOderAlles() {
+            var z = document.getElementById('wk-ziel');
+            if (!z) return { text: state.wkZiel || '', teil: false, von: 0, bis: 0 };
+            state.wkZiel = z.value;
+            var a = z.selectionStart, b = z.selectionEnd;
+            if (a != null && b != null && b > a) return { text: z.value.slice(a, b), teil: true, von: a, bis: b };
+            return { text: z.value, teil: false, von: 0, bis: z.value.length };
+        }
+
+        function wkUeberarbeiten(art) {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel', 'error'); return; }
+            var sel = wkAuswahlOderAlles();
+            if (!sel.text.trim()) { showToast('Kein Text zum Überarbeiten', 'warning'); return; }
+            var auftrag = '';
+            if (art === 'frei') {
+                var el = document.getElementById('wk-auftrag');
+                auftrag = el ? el.value.trim() : '';
+                if (!auftrag) { showToast('Bitte einen Auftrag eingeben', 'warning'); return; }
+            } else {
+                WK_UEBERARBEITEN.forEach(function(a) { if (a[0] === art) auftrag = a[2]; });
+            }
+            state.wkBereich = sel;
+            state.kiLaeuft = true; state.wkVorschlag = null; render();
+            var nurListe = (art === 'wendung');
+            var sys = kiRegelPrompt() + '\n\\nAUFGABE: ' + auftrag + '\n'
+              + (nurListe ? '' : '- Antworte NUR mit dem überarbeiteten Text, ohne Vorrede und ohne Erklärungen.\n')
+              + '- Sprechernamen und hochdeutsche Regieanweisungen bleiben unverändert.\n'
+              + '- Halte dich an die Schreibregeln.';
+            kiFrage(sys, sel.text, 4000, false).then(function(a) {
+                state.kiLaeuft = false; state.wkVorschlag = a; render();
+            }).catch(function(e) { state.kiLaeuft = false; render(); showToast(e.message, 'error'); });
+        }
+
+        function wkVorschlagUebernehmen() {
+            var v = state.wkVorschlag, b = state.wkBereich;
+            if (!v) return;
+            var neu = String(v).replace(/^```[a-z]*\\n?|```$/g, '').trim();
+            var z = document.getElementById('wk-ziel');
+            var ganz = z ? z.value : (state.wkZiel || '');
+            if (b && b.teil) state.wkZiel = ganz.slice(0, b.von) + neu + ganz.slice(b.bis);
+            else state.wkZiel = neu;
+            state.wkVorschlag = null; state.wkBereich = null;
+            render();
+            showToast('✓ Übernommen', 'success');
+        }
+
+        function wkVorschlagKopieren() {
+            var t = state.wkVorschlag || '';
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function() { showToast('Vorschlag kopiert', 'success'); });
+        }
 
         function renderExportTab() {
             var h = '<div class="wz-wrap">';
@@ -2387,6 +2738,8 @@
             if (el) el.addEventListener('input', function(e) { state.pruefText = e.target.value; });
             el = document.getElementById('pruef-regie');
             if (el) el.addEventListener('change', function(e) { state.pruefRegie = e.target.checked; });
+            el = document.getElementById('pruef-unbekannt');
+            if (el) el.addEventListener('change', function(e) { state.pruefUnbekannt = e.target.checked; });
             el = document.getElementById('ki-text');
             if (el) el.addEventListener('input', function(e) { state.pruefKiText = e.target.value; });
             el = document.getElementById('wk-ziel');
@@ -2395,6 +2748,8 @@
             if (el) el.addEventListener('input', function(e) { state.wkQuelle = e.target.value; });
             el = document.getElementById('wk-sprache');
             if (el) el.addEventListener('change', function(e) { state.wkSprache = e.target.value; });
+            el = document.getElementById('wk-chat-eingabe');
+            if (el) el.addEventListener('keypress', function(e) { if (e.key === 'Enter') kiChatSenden(); });
         }
         
         function render() {
