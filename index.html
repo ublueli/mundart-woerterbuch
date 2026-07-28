@@ -1550,7 +1550,7 @@
             pruefAbgelehnt = pruefAbgelehnt || new Set();
             pruefAbgelehnt.add(f.wort.toLowerCase());
             showToast('«' + f.wort + '» gilt jetzt als eigenes Wort', 'success');
-            pruefText(true);
+            pruefRechne();
         }
 
         function pruefText(leise) {
@@ -1558,6 +1558,22 @@
             if (!txt.trim()) { if (!leise) showToast('Bitte zuerst einen Text einfügen', 'warning'); return; }
             if (!leise) showToast('Prüfe...', 'warning');
             pruefLadeWortschatz().then(function(bekannt) {
+                pruefBerechnen(bekannt);
+                state.adminTab = 'pruefen';
+                render();
+                if (!leise) showToast(pruefFunde.length + ' Fundstellen', pruefFunde.length ? 'warning' : 'success');
+            }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
+        }
+
+        // Neu rechnen, aber nur den unteren Teil austauschen – der Cursor im Textfeld bleibt stehen
+        function pruefRechne() {
+            if (!pruefBekannt || !(state.pruefText || '').trim()) return;
+            pruefBerechnen(pruefBekannt);
+            pruefUntenNeu();
+        }
+
+        function pruefBerechnen(bekannt) {
+                var txt = state.pruefText || '';
                 var zeilen = txt.split('\n');
                 var funde = [];
                 var html = '';
@@ -1587,9 +1603,11 @@
                             else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
                         }
                         if (!art) { html += escHtml(t); return; }
+                        if (pruefIgnoriert && pruefIgnoriert.has(art + ':' + t.toLowerCase())) { html += escHtml(t); return; }
                         var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis' || art === 'aehnlich') ? 'wz-angleich' : 'wz-neu';
                         funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
-                        html += '<span class="wz-hit ' + cls + '" data-i="' + idx + '" onclick="pruefSpring(' + idx + ')" title="' + escHtml(info.text) + '">' + escHtml(t) + '</span>';
+                        html += '<span class="wz-hit ' + cls + '" data-i="' + idx + '" onclick="pruefWegklicken(' + idx + ')" '
+                              + 'title="' + escHtml(info.text) + ' – klicken, um die Markierung zu entfernen">' + escHtml(t) + '</span>';
                         idx++;
                     });
                     html += '\n';
@@ -1597,10 +1615,27 @@
 
                 pruefFunde = funde;
                 state.pruefErgebnis = { html: html, regie: regieZeilen };
-                state.adminTab = 'pruefen';
-                render();
-                if (!leise) showToast(funde.length + ' Fundstellen', funde.length ? 'warning' : 'success');
-            }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
+        }
+
+        /* ---- Markierungen wegklicken ---- */
+
+        var pruefIgnoriert = null;
+
+        function pruefWegklicken(i) {
+            var f = pruefFunde[i];
+            if (!f) return;
+            pruefIgnoriert = pruefIgnoriert || new Set();
+            pruefIgnoriert.add(f.art + ':' + f.wort.toLowerCase());
+            pruefRechne();
+        }
+
+        function pruefIgnorieren(i) { pruefWegklicken(i); }
+
+        function pruefIgnoriertZurueck() {
+            pruefIgnoriert = null;
+            pruefAbgelehnt = null;
+            pruefRechne();
+            showToast('Alle Markierungen sind wieder da', 'success');
         }
 
         function escHtml(s) {
@@ -1624,8 +1659,18 @@
             if (!re.test(z)) { showToast('Stelle nicht mehr gefunden', 'warning'); return; }
             zeilen[f.zeile] = z.replace(re, function(all, pre) { return pre + f.vorschlag; });
             state.pruefText = zeilen.join('\n');
+            pruefTextfeldNachfuehren();
             showToast('«' + f.wort + '» → «' + f.vorschlag + '»', 'success');
-            pruefText();
+            pruefRechne();
+        }
+
+        // Textfeld auf den neuen Stand bringen, ohne die ganze Seite neu zu zeichnen
+        function pruefTextfeldNachfuehren() {
+            var ta = document.getElementById('pruef-ta');
+            if (!ta) return;
+            var pos = ta.selectionStart;
+            ta.value = state.pruefText || '';
+            try { ta.setSelectionRange(pos, pos); } catch (e) {}
         }
 
         // Alle sicheren Korrekturen (Fehler + Angleichungen) anwenden
@@ -1649,8 +1694,9 @@
                 zeilen[zi] = z;
             });
             state.pruefText = zeilen.join('\n');
+            pruefTextfeldNachfuehren();
             showToast(n + ' Korrekturen übernommen', 'success');
-            pruefText();
+            pruefRechne();
         }
 
         function pruefKopieren() {
@@ -1680,15 +1726,26 @@
             h += '<button class="btn" onclick="pruefText()">🔍 Prüfen</button>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-regie"' + (state.pruefRegie !== false ? ' checked' : '') + '> Regieanweisungen überspringen</label>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-unbekannt"' + (state.pruefUnbekannt !== false ? ' checked' : '') + '> unbekannte Wörter markieren</label>';
-            if (e) h += '<button class="wz-mini grau" onclick="pruefKopieren()">📋 Text kopieren</button>';
-            if (e) h += '<button class="wz-mini grau" onclick="pruefZuruecksetzen()">✕ Ergebnis schliessen</button>';
+            h += '<button class="wz-mini grau" onclick="pruefKopieren()">📋 Text kopieren</button>';
+            h += '<button class="wz-mini grau" onclick="pruefZuruecksetzen()">✕ Ergebnis schliessen</button>';
+            h += '<span class="wz-muted" id="pruef-stand"></span>';
             h += '</div>';
             h += '<div class="wz-legende"><span><b class="wz-fehler">Regelverstoss</b> muss korrigiert werden</span>'
                + '<span><b class="wz-angleich">Angleichung</b> ältere Schreibweise</span>'
                + '<span><b class="wz-angleich">Schreibweise?</b> ähnlich wie ein Wort im Wörterbuch</span>'
-               + '<span><b class="wz-neu">unbekannt</b> nicht im Wörterbuch</span></div>';
+               + '<span><b class="wz-neu">unbekannt</b> nicht im Wörterbuch</span>'
+               + '<span class="wz-muted">Du kannst oben direkt im Text schreiben – die Markierungen rechnen sich nach. '
+               + 'Eine Markierung, mit der du nicht einverstanden bist, klickst du im Text einfach weg.</span></div>';
             h += '</div>';
+            h += '<div id="pruef-unten">' + pruefUntenHtml() + '</div>';
+            h += '</div>';
+            return h;
+        }
 
+        // Nur der untere Teil – wird beim Tippen einzeln nachgeführt, damit der Cursor stehen bleibt
+        function pruefUntenHtml() {
+            var e = state.pruefErgebnis;
+            var h = '';
             if (e) {
                 var nF = pruefFunde.filter(function(f){return f.art==='fehler';}).length;
                 var nA = pruefFunde.filter(function(f){return f.art==='angleich'||f.art==='hinweis';}).length;
@@ -1717,13 +1774,38 @@
                         if (f.vorschlag) h += '<button class="wz-mini" onclick="pruefUebernehmen(' + i + ')">übernehmen</button>';
                         if (f.art === 'aehnlich') h += '<button class="wz-mini grau" onclick="pruefAblehnen(' + i + ')">nein, eigenes Wort</button>';
                         if (f.art === 'neu') h += '<button class="wz-mini grau" onclick="pruefNeuesWort(' + i + ')">ins Wörterbuch</button>';
+                        h += '<button class="wz-mini grau" title="Markierung entfernen" onclick="pruefIgnorieren(' + i + ')">✕</button>';
                         h += '</div>';
                     });
-                    h += '</div></div>';
+                    h += '</div>';
+                    if (pruefIgnoriert && pruefIgnoriert.size)
+                        h += '<div class="wz-row" style="margin-top:10px;"><button class="wz-mini grau" onclick="pruefIgnoriertZurueck()">↩ '
+                           + pruefIgnoriert.size + ' weggeklickte Markierung' + (pruefIgnoriert.size === 1 ? '' : 'en') + ' zurückholen</button></div>';
+                    h += '</div>';
+                } else if (pruefIgnoriert && pruefIgnoriert.size) {
+                    h += '<div class="wz-box"><div class="wz-row"><span class="wz-muted">Nichts mehr zu beanstanden.</span>'
+                       + '<button class="wz-mini grau" onclick="pruefIgnoriertZurueck()">↩ ' + pruefIgnoriert.size + ' weggeklickte zurückholen</button></div></div>';
                 }
             }
-            h += '</div>';
             return h;
+        }
+
+        // Unteren Teil nachführen, ohne den Text darüber anzurühren
+        function pruefUntenNeu() {
+            var box = document.getElementById('pruef-unten');
+            if (box) box.innerHTML = pruefUntenHtml();
+            var st = document.getElementById('pruef-stand');
+            if (st) st.textContent = state.pruefErgebnis ? (pruefFunde.length + ' Fundstellen') : '';
+        }
+
+        // Beim Tippen im Textfeld: kurz warten, dann still nachrechnen
+        var pruefTippTimer = null;
+        function pruefNachTippen() {
+            if (!state.pruefErgebnis) return;
+            if (pruefTippTimer) clearTimeout(pruefTippTimer);
+            var st = document.getElementById('pruef-stand');
+            if (st) st.textContent = 'ändert…';
+            pruefTippTimer = setTimeout(function() { pruefRechne(); }, 700);
         }
 
 
@@ -1911,7 +1993,10 @@
               + '4. Die Spalte «Vorschlag» enthält NUR das korrigierte Wort, ohne Kommentar und ohne Klammerzusätze.\n'
               + '5. Alles Unsichere, Zweifelhafte oder Erklärungsbedürftige kommt NICHT in die Tabelle, sondern unter «Hinweise».\n'
               + '6. Ignoriere: hochdeutsche Regieanweisungen, Sprechernamen, Eigennamen, Ortsnamen und Fremdwörter.\n'
-              + '7. Wenn ein Wort in verschiedenen Dialekten unterschiedlich lautet, ist das KEIN Verstoss.\n\n'
+              + '7. Wenn ein Wort in verschiedenen Dialekten unterschiedlich lautet, ist das KEIN Verstoss.\n'
+              + '8. Denk zuerst nach, schreib dann die Tabelle. Gib GENAU EINE Tabelle aus. '
+              + 'Korrigiere dich nicht nachträglich mit einer zweiten Tabelle – überlege vorher, was hineingehört.\n'
+              + '9. Rate nicht. Wenn du nicht sicher bist, welches Wort gemeint ist, gehört es unter «Hinweise» und nicht in die Tabelle.\n\n'
               + 'FORMAT:\n'
               + '## Regelverstösse\n'
               + '| Wort | Regel | Vorschlag |\n'
@@ -1924,7 +2009,7 @@
               + 'Prüfe sie kritisch (manche können falsch sein) und ergänze, was ihr entgangen ist:\n' + uniq.join('\n');
 
             kiFrage(sys, user, 3000, false).then(function(a) {
-                state.kiAntwort = a; state.kiLaeuft = false; render();
+                state.kiAntwort = kiTabelleSaeubern(a); state.kiLaeuft = false; render();
             }).catch(function(e) {
                 state.kiLaeuft = false; state.kiAntwort = '⚠️ ' + e.message; render();
             });
@@ -1940,6 +2025,61 @@
           + '- reim und nebenform_reim sind blosse Lautfolgen und folgen der Mundartschreibung.\n'
           + '- Das Hochdeutsch ist SCHWEIZER Hochdeutsch: nie ß, immer ss (heisst, gross, äusserst, ausserordentlich, '
           + 'wahrheitsgemäss, Strasse, dass). Als Anführungszeichen «Guillemets». Das gilt ausnahmslos in allen Feldern.\n\n';
+
+        /* ---- Aufräumen nach der KI ----
+           Die KI listet manchmal Wörter auf, bei denen Wort und Vorschlag gleich sind,
+           und hängt dann eine zweite, korrigierte Tabelle an. Beides wird hier entfernt,
+           damit in der Tabelle nur echte Änderungen stehen. */
+        function kiTabelleSaeubern(text) {
+            if (!text) return text;
+            var zeilen = String(text).split('\n');
+            var raus = [], gesehen = {}, imBlock = false, blockKopf = false;
+            zeilen.forEach(function(z) {
+                var t = z.trim();
+                var istZeile = t.indexOf('|') === 0 && t.lastIndexOf('|') > 0;
+                if (!istZeile) { imBlock = false; blockKopf = false; raus.push(z); return; }
+                var sp = t.replace(/^\||\|$/g, '').split('|');
+                if (sp.length < 3) { raus.push(z); return; }
+                var wort = sp[0].trim(), vor = sp[2].trim().replace(/\*\*/g, '');
+                if (!imBlock) { imBlock = true; blockKopf = true; raus.push(z); return; }   // Kopfzeile
+                if (blockKopf && /^[\s|:-]+$/.test(t.replace(/\|/g, ''))) { blockKopf = false; raus.push(z); return; }
+                blockKopf = false;
+                if (!wort || !vor) return;
+                if (wort === vor) return;                                   // kein Unterschied → weg
+                if (vor.toLowerCase() === 'kein fehler' || vor === '–' || vor === '-') return;
+                var k = wort.toLowerCase() + '→' + vor.toLowerCase();
+                if (gesehen[k]) return;                                     // Wiederholung aus der zweiten Tabelle
+                gesehen[k] = 1;
+                raus.push(z);
+            });
+            // Zweiter Durchgang: leer gewordene Tabellen und ihre Überschriften entfernen
+            var end = [], i = 0;
+            while (i < raus.length) {
+                var t2 = raus[i].trim();
+                if (t2.indexOf('|') === 0) {
+                    var j = i, daten = 0;
+                    while (j < raus.length && raus[j].trim().indexOf('|') === 0) {
+                        var zt = raus[j].trim();
+                        if (!/^\|[\s|:-]+\|$/.test(zt) && j > i) daten++;
+                        j++;
+                    }
+                    if (daten === 0) {
+                        // Überschrift und «Korrigierte Tabelle» davor mitnehmen
+                        while (end.length && !end[end.length - 1].trim()) end.pop();
+                        if (end.length && /^#{1,4} /.test(end[end.length - 1].trim())) end.pop();
+                        while (end.length && !end[end.length - 1].trim()) end.pop();
+                        if (end.length && /^\**Korrigierte Tabelle/i.test(end[end.length - 1].trim())) end.pop();
+                        i = j;
+                        continue;
+                    }
+                    for (; i < j; i++) end.push(raus[i]);
+                    continue;
+                }
+                if (/^\**Korrigierte Tabelle:?\**$/i.test(t2)) { i++; continue; }
+                end.push(raus[i]); i++;
+            }
+            return end.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+        }
 
         /* ---- KI füllt alle Felder eines Wortes ---- */
         function kiFelderFuellen(begriff, zielId) {
@@ -3199,7 +3339,7 @@
             if (el) el.addEventListener('keypress', function(e) { if (e.key === 'Enter') searchBegriffToEdit(); });
             // Werkzeuge
             el = document.getElementById('pruef-ta');
-            if (el) el.addEventListener('input', function(e) { state.pruefText = e.target.value; });
+            if (el) el.addEventListener('input', function(e) { state.pruefText = e.target.value; pruefNachTippen(); });
             el = document.getElementById('pruef-regie');
             if (el) el.addEventListener('change', function(e) { state.pruefRegie = e.target.checked; });
             el = document.getElementById('pruef-unbekannt');
