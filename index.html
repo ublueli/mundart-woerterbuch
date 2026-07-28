@@ -1375,9 +1375,10 @@
 
         // Prüft, ob ein Wort (oder eine Grundform davon) im Wörterbuch steht
         function pruefIstBekannt(wort, bekannt) {
-            var w = wort.toLowerCase();
+            var w = wort.toLowerCase().replace(/^[-'’]+|[-'’]+$/g, '');
+            if (!w) return true;
             if (bekannt.has(w)) return true;
-            if (w.length < 4) return false;
+            if (w.length < 3) return false;
             var kand = [];
             // Endungen abschneiden
             ['e','i','t','s','r','n'].forEach(function(e) { if (w.slice(-1) === e) kand.push(w.slice(0, -1)); });
@@ -1389,7 +1390,7 @@
             if (w.slice(-1) === 'i') kand.push(w.slice(0, -1) + 'e');
             if (w.slice(-1) === 'e') kand.push(w.slice(0, -1) + 'i');
             for (var i = 0; i < kand.length; i++)
-                if (kand[i].length >= 3 && bekannt.has(kand[i])) return true;
+                if (kand[i].length >= 2 && bekannt.has(kand[i])) return true;
             return false;
         }
 
@@ -1407,7 +1408,95 @@
                     return alle;
                 });
             }
-            return batch().then(function(s) { pruefBekannt = s; return s; });
+            return batch().then(function(s) { pruefBekannt = s; pruefIndexBauen(); return s; });
+        }
+
+
+        /* ---- Engeres Raster: ähnliche Wörter im Wörterbuch finden ---- */
+
+        var pruefIndex = null;        // Wörter nach Länge sortiert, für den Nachbarschaftsvergleich
+        var pruefAbgelehnt = null;    // Wörter, bei denen der Vorschlag abgelehnt wurde
+
+        function pruefIndexBauen() {
+            pruefIndex = {};
+            pruefBekannt.forEach(function(w) {
+                if (w.length < 3) return;
+                (pruefIndex[w.length] = pruefIndex[w.length] || []).push(w);
+            });
+        }
+
+        // Abstand nach Levenshtein, bricht ab sobald er über «max» liegt
+        function pruefAbstand(a, b, max) {
+            var la = a.length, lb = b.length, i, j;
+            if (Math.abs(la - lb) > max) return max + 1;
+            var prev = new Array(lb + 1), cur = new Array(lb + 1);
+            for (j = 0; j <= lb; j++) prev[j] = j;
+            for (i = 1; i <= la; i++) {
+                cur[0] = i;
+                var best = i;
+                for (j = 1; j <= lb; j++) {
+                    var c = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+                    var v = prev[j] + 1;
+                    if (cur[j - 1] + 1 < v) v = cur[j - 1] + 1;
+                    if (prev[j - 1] + c < v) v = prev[j - 1] + c;
+                    cur[j] = v;
+                    if (v < best) best = v;
+                }
+                if (best > max) return max + 1;
+                var t = prev; prev = cur; cur = t;
+            }
+            return prev[lb];
+        }
+
+        // Vokalsenkung rückgängig: ech→ich, ond→und, öber→über. Solche Treffer wiegen schwerer.
+        function pruefIstVokalwechsel(a, b) {
+            if (a.length !== b.length) return false;
+            var paare = { 'e':'i', 'o':'u', 'ö':'ü' };
+            var anders = 0;
+            for (var i = 0; i < a.length; i++) {
+                var x = a.charAt(i), y = b.charAt(i);
+                if (x === y) continue;
+                if (paare[x] !== y) return false;
+                anders++;
+            }
+            return anders > 0;
+        }
+
+        // Bester Vorschlag für ein unbekanntes Wort, oder null
+        function pruefAehnlich(wort) {
+            if (!pruefIndex) return null;
+            var w = wort.toLowerCase().replace(/^[-'’]+|[-'’]+$/g, '');
+            if (w.length < 4) return null;                       // zu kurz, zu viele Zufallstreffer
+            var max = w.length <= 4 ? 1 : 2;                     // ganz kurze Wörter nur mit einem Unterschied
+            var beste = null;
+            for (var L = w.length - max; L <= w.length + max; L++) {
+                var liste = pruefIndex[L];
+                if (!liste) continue;
+                for (var k = 0; k < liste.length; k++) {
+                    var kand = liste[k];
+                    if (kand.charAt(0) !== w.charAt(0) && kand.slice(-1) !== w.slice(-1)) continue;
+                    var d = pruefAbstand(w, kand, max);
+                    if (d > max || d === 0) continue;
+                    var rang = d * 10 - (pruefIstVokalwechsel(w, kand) ? 5 : 0) - (d === 1 ? 2 : 0);
+                    if (!beste || rang < beste.rang) beste = { wort: kand, abstand: d, rang: rang };
+                }
+            }
+            if (!beste) return null;
+            // Grossschreibung des Originals übernehmen
+            var v = beste.wort;
+            if (wort.charAt(0) === wort.charAt(0).toUpperCase() && wort.charAt(0) !== wort.charAt(0).toLowerCase())
+                v = v.charAt(0).toUpperCase() + v.slice(1);
+            return { vorschlag: v, abstand: beste.abstand };
+        }
+
+        // «Nein, das ist ein eigenes Wort» – ab jetzt als neues Wort führen
+        function pruefAblehnen(i) {
+            var f = pruefFunde[i];
+            if (!f) return;
+            pruefAbgelehnt = pruefAbgelehnt || new Set();
+            pruefAbgelehnt.add(f.wort.toLowerCase());
+            showToast('«' + f.wort + '» gilt jetzt als eigenes Wort', 'success');
+            pruefText(true);
         }
 
         function pruefText(leise) {
@@ -1437,9 +1526,14 @@
                         var f = regelPruefeWort(t);
                         var art = null, info = null;
                         if (f.length) { art = f[0].art; info = f[0]; }
-                        else if (state.pruefUnbekannt !== false && !pruefIstBekannt(t, bekannt)) { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                        else if (state.pruefUnbekannt !== false && !pruefIstBekannt(t, bekannt)) {
+                            var ae = (pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())) ? null : pruefAehnlich(t);
+                            if (ae) { art = 'aehnlich'; info = { art:'aehnlich', regel:'Schreibweise?',
+                                        text:'Im Wörterbuch steht «' + ae.vorschlag + '»', vorschlag: ae.vorschlag }; }
+                            else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                        }
                         if (!art) { html += escHtml(t); return; }
-                        var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis') ? 'wz-angleich' : 'wz-neu';
+                        var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis' || art === 'aehnlich') ? 'wz-angleich' : 'wz-neu';
                         funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
                         html += '<span class="wz-hit ' + cls + '" data-i="' + idx + '" onclick="pruefSpring(' + idx + ')" title="' + escHtml(info.text) + '">' + escHtml(t) + '</span>';
                         idx++;
@@ -1537,18 +1631,21 @@
             h += '</div>';
             h += '<div class="wz-legende"><span><b class="wz-fehler">Regelverstoss</b> muss korrigiert werden</span>'
                + '<span><b class="wz-angleich">Angleichung</b> ältere Schreibweise</span>'
+               + '<span><b class="wz-angleich">Schreibweise?</b> ähnlich wie ein Wort im Wörterbuch</span>'
                + '<span><b class="wz-neu">unbekannt</b> nicht im Wörterbuch</span></div>';
             h += '</div>';
 
             if (e) {
                 var nF = pruefFunde.filter(function(f){return f.art==='fehler';}).length;
                 var nA = pruefFunde.filter(function(f){return f.art==='angleich'||f.art==='hinweis';}).length;
+                var nAe = pruefFunde.filter(function(f){return f.art==='aehnlich';}).length;
                 var nN = pruefFunde.filter(function(f){return f.art==='neu';}).length;
 
                 h += '<div class="wz-box"><h3>Ergebnis</h3>';
                 h += '<div class="wz-row" style="margin:0 0 10px;">'
                    + '<span class="wz-badge wz-b-f">' + nF + ' Regelverstösse</span>'
                    + '<span class="wz-badge wz-b-a">' + nA + ' Angleichungen</span>'
+                   + '<span class="wz-badge wz-b-a">' + nAe + ' ähnliche Schreibweise</span>'
                    + '<span class="wz-badge wz-b-n">' + nN + ' unbekannt</span>'
                    + (e.regie ? '<span class="wz-muted">' + e.regie + ' Regiezeilen übersprungen</span>' : '')
                    + '</div>';
@@ -1564,6 +1661,7 @@
                         h += '<span class="wz-badge ' + b + '">' + escHtml(f.regel) + '</span>';
                         h += '<span class="wz-item-m">' + escHtml(f.text) + (f.vorschlag ? ' → <b>' + escHtml(f.vorschlag) + '</b>' : '') + '</span>';
                         if (f.vorschlag) h += '<button class="wz-mini" onclick="pruefUebernehmen(' + i + ')">übernehmen</button>';
+                        if (f.art === 'aehnlich') h += '<button class="wz-mini grau" onclick="pruefAblehnen(' + i + ')">nein, eigenes Wort</button>';
                         if (f.art === 'neu') h += '<button class="wz-mini grau" onclick="pruefNeuesWort(' + i + ')">ins Wörterbuch</button>';
                         h += '</div>';
                     });
@@ -1785,7 +1883,9 @@
           + '- In HOCHDEUTSCH geschrieben werden: bedeutung, bemerkung, synonyme, wortart, kategorie.\n'
           + '  Die Bemerkung ist ein redaktioneller Kommentar und steht IMMER in Hochdeutsch, nie in Mundart. '
           + 'Zitierte Mundartwendungen darin stehen in «Guillemets» und dürfen Mundart sein.\n'
-          + '- reim und nebenform_reim sind blosse Lautfolgen und folgen der Mundartschreibung.\n\n';
+          + '- reim und nebenform_reim sind blosse Lautfolgen und folgen der Mundartschreibung.\n'
+          + '- Das Hochdeutsch ist SCHWEIZER Hochdeutsch: nie ß, immer ss (heisst, gross, äusserst, ausserordentlich, '
+          + 'wahrheitsgemäss, Strasse, dass). Als Anführungszeichen «Guillemets». Das gilt ausnahmslos in allen Feldern.\n\n';
 
         /* ---- KI füllt alle Felder eines Wortes ---- */
         function kiFelderFuellen(begriff, zielId) {
@@ -2322,9 +2422,11 @@
             if (!pruefBekannt) return;
             [begriff, nebenform].forEach(function(w) {
                 if (!w) return;
-                String(w).split(/[,;/]/).forEach(function(t) {
+                String(w).split(/[,;/\s]+/).forEach(function(t) {
                     t = t.trim().toLowerCase();
-                    if (t) pruefBekannt.add(t);
+                    if (!t) return;
+                    pruefBekannt.add(t);
+                    if (pruefIndex && t.length >= 3) (pruefIndex[t.length] = pruefIndex[t.length] || []).push(t);
                 });
             });
         }
