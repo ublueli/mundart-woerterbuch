@@ -278,7 +278,7 @@
             wkSprache: 'Deutsch',
             ki: {
                 key: localStorage.getItem('mw-api-key') || '',
-                modell: localStorage.getItem('mw-modell') || 'claude-sonnet-4-5',
+                modell: localStorage.getItem('mw-modell') || 'claude-sonnet-5',
                 modelle: [],
                 websuche: localStorage.getItem('mw-websuche') === '1'
             }
@@ -1230,7 +1230,7 @@
             'ech':'ich','esch':'isch','met':'mit','mech':'mich','sech':'sich','be':'bi','send':'sind','hed':'het',
             'om':'um','ond':'und','god':'goht','öbis':'öppis','gled':'gleed','drengend':'dringend','senn':'sinn',
             'entscholdigong':'Entschuldigung','wösseschaft':'Wüsseschaft','öberchome':'überchome','aso':'also',
-            'emol':'emal','frölein':'Fröilein','öber':'öpper','wett':'wott','chond':'chunt','vel':'vil',
+            'emol':'emal','frölein':'Fröilein','öber':'öpper','chond':'chunt','vel':'vil',
             'villecht':'villicht','vielecht':'villicht','sösch':'söscht','irged':'irgend','hötzotags':'hüttzutags',
             'nor':'nur','ehne':'öich','euch':'öich','euer':'öier','euchi':'öiri','euchne':'öichne','üchne':'öichne',
             'eus':'öis','euse':'öise','eusi':'öisi','eues':'öies','ned':'nid','nöd':'nid','symphatisch':'sympathisch',
@@ -1317,17 +1317,30 @@
             return funde;
         }
 
+        var REGIE_DEUTSCH = ('der,die,das,den,dem,des,ein,eine,einen,einem,einer,eines,ist,sind,war,waren,nicht,sich,'
+          + 'wird,werden,wurde,hat,haben,hatte,hätte,seine,seinen,seinem,ihre,ihren,ihrem,dann,noch,schon,wieder,sehr,'
+          + 'auch,über,für,aus,nach,bei,zum,zur,vom,beim,durch,gegen,ohne,zwischen,während,weil,dass,damit,sondern,'
+          + 'wenn,aber,oder,geht,kommt,steht,sieht,schaut,nimmt,legt,setzt,bleibt,dreht,lässt,weiss,ihn,ihm,ihnen').split(',');
+        var REGIE_MUNDART = ('isch,nid,ned,gsi,gsii,het,hend,händ,hei,hät,chunt,chont,cho,chan,cha,chasch,öppis,öpper,'
+          + 'nüt,nüme,gseit,wott,wei,gaht,goht,gmacht,gha,sit,scho,au,dä,mer,üs,öich,ha,hesch,bi,bisch,wo,do,uf,vo,'
+          + 'gsteh,gseh,gsehsch,mir,är,si,es,de,zwöi,wenns,hets,hends').split(',');
+
         function regelIstRegie(zeile) {
             var z = zeile.trim();
             if (!z) return false;
             if (/^\(.*\)$/.test(z)) return true;
-            if (/^(SZENE|AKT|Auftritt|Schauplatz|Stille|Personen|ERSTER|ZWEITER|DRITTER)\b/i.test(z)) return true;
+            if (/^(SZENE|AKT|Auftritt|Schauplatz|Stille|Pause|Personen|ERSTER|ZWEITER|DRITTER|VIERTER)\b/i.test(z)) return true;
             if (/^\d+\.[\d.]*\s*$/.test(z)) return true;
-            var hd = (z.match(/\b(der|die|das|und|ist|sich|nicht|einen|einem|eine|wird|werden|hat|sie|er|mit|von|zu|im|auf|dem|den|ihre|seine|einer|als|aus|für|nach|über)\b/gi) || []).length;
-            var woerter = (z.match(/[A-Za-zÄÖÜäöüß]+/g) || []).length;
-            return woerter >= 4 && hd / woerter > 0.28;
+            if (/^[A-ZÄÖÜ][A-ZÄÖÜa-zäöü\s.]{0,24}:/.test(z)) return false;   // Sprecherzeile -> prüfen
+            var woerter = (z.toLowerCase().match(/[a-zäöüß]+/g) || []);
+            if (woerter.length < 3) return false;
+            var d = 0, m = 0;
+            woerter.forEach(function(w) {
+                if (REGIE_DEUTSCH.indexOf(w) >= 0) d++;
+                if (REGIE_MUNDART.indexOf(w) >= 0) m++;
+            });
+            return d >= 2 && d > m;
         }
-
 
         /* ═══════════ PRÜFEN (regelbasiert, ohne KI) ═══════════ */
 
@@ -1522,31 +1535,63 @@
 
         // Die Schreibregeln als Systemprompt
         function kiRegelPrompt() {
-            return 'Du bist Fachredaktor für ein Schweizer Mundart-Wörterbuch (Dialekte aus Luzern, Aargau, Solothurn und Bern). '
-              + 'Die Schreibweise ist SCHRIFTNAH (am gewohnten Schriftbild orientiert), nicht streng lautgetreu.\n\n'
-              + 'VERBINDLICHE SCHREIBREGELN:\n'
-              + '1. Nie ß, immer ss.\n'
-              + '2. Keine Apostrophe: zäme (nicht z\'säme), d Sach (nicht d\'Sach), Gstabi (nicht G\'stabi).\n'
-              + '3. Langes i = ii, nie y: Ziit, gsii, Wii, miin, Priis. Ausnahme: echte Lehnwörter behalten y (Party, Typ, Baby, Pyjama, Tyrann).\n'
-              + '4. Immer «nid», nie «nöd» oder «nicht».\n'
-              + '5. Artikel: «das» = s, «die» = d. Nie «ds».\n'
-              + '6. st/sp bleibt am WORTANFANG, am Anfang eines Kompositum-Teils und nach einer Vorsilbe: Stei, Spiel, Telefonstange, verstah, gstande. '
-              + 'Im WORTINNERN wird es scht/schp: Fänschter, Eschtrig, Luscht, Mischt, Troscht, Fäscht. '
-              + 'Nie «scht/schp» am Wortanfang schreiben (nicht schtärbe, sondern stärbe).\n'
-              + '7. ie/ue/üe sind echte Zwielaute und bleiben (Lied, guet, wüescht) – nie iä/uä/üä.\n'
-              + '8. eu und äu werden zu öi: nöi, Höi, Fröid, Böim. «eu» nur in Fremdwörtern.\n'
-              + '9. Unbetontes e bleibt e: Gipfeli, Meiteli (nicht Gipfäli).\n'
-              + '10. Das l wird geschrieben: Milch, Gäld, Felse (keine l-Vokalisierung wie Miuch/Gäud).\n'
-              + '11. Fremdwörter auf -ier/-iere behalten ie: pressiere, studiere, Offizier.\n'
-              + '12. VERBENDUNGEN: 3. Person Einzahl hat -t (är lacht, är macht, är chunt, är het). '
-              + 'Mehrzahl hat -d (mir lached, si gönd, si hend, si sind). '
-              + 'Bernische 2. Person Mehrzahl hat -t (dir lachet). '
-              + 'Nur wenn der Stamm auf t/d endet, steht -et: är wartet, är redet.\n'
-              + '13. Pronomen: betont/unbetont är/er, mir/mer, iich/i. Immer «si» (nie «se»), immer «ihr» (nie dir/der). '
-              + 'Ihr-Formen: ihr, öich, öier/öiri/öies. Nie euch/euer.\n'
-              + '14. Grossschreibung: du, dich, dir, dis bleiben klein. Höflichkeitsform gross: Ihr, Öich, Si, Öier.\n'
-              + '15. Partizip: ge- wird g- (gmacht, gseh, gsii); vor Plosiven kein g (cho, ta, gange); '
-              + 'trennbare Vorsilbe + g (abegluegt); untrennbare Vorsilben ohne g (verzellt, brichtet); ch- wird im Partizip k- (choche → kochet).';
+            return 'Du bist Fachredaktor für ein Schweizer Mundart-Wörterbuch (Luzern, Aargau, Solothurn, Bern). '
+              + 'Die Schreibweise ist SCHRIFTNAH (am gewohnten Schriftbild orientiert), nicht lautgetreu.\n\n'
+              + 'SCHREIBREGELN (mit Namen – benutze IMMER diese Namen, nie Nummern):\n\n'
+              + '[ss] Nie ß, immer ss.\n'
+              + '[Apostroph] Keine Apostrophe: zäme, d Sach, Gstabi (nicht z\'säme, d\'Sach, G\'stabi).\n'
+              + '[y→ii] Langes i wird ii geschrieben, nie y: Ziit, gsii, Wii, Priis. Echte Lehnwörter behalten y (Party, Typ, Baby, Tyrann).\n'
+              + '[nid] Immer «nid», nie «nöd» und nie das hochdeutsche «nicht».\n'
+              + '[Artikel] «das» = s, «die» = d. Nie «ds».\n'
+              + '[st-Anfang] st/sp bleibt am Wortanfang, am Anfang eines Kompositum-Teils und nach einer Vorsilbe: '
+              + 'Stei, Spiel, stärbe, Stock, Telefonstange, verstah, gstande, gstole, bespreche. '
+              + 'FALSCH ist scht/schp am Wortanfang: schtärbe, Schtock, gschtole, beschpreche.\n'
+              + '[scht-innen] Im WORTINNERN wird st/sp zu scht/schp: Fänschter, Eschtrig, Luscht, Mischt, Troscht, Fäscht, Wurscht.\n'
+              + '[ie] ie/ue/üe sind echte Zwielaute und bleiben (Lied, guet, wüescht) – nie iä/uä/üä. '
+              + 'Fremdwörter auf -ier/-iere behalten ie (pressiere, studiere, Offizier).\n'
+              + '[öi] Hochdeutsch eu und äu werden öi: nöi, Höi, Fröid, Böim. «eu» nur in Fremdwörtern.\n'
+              + '[e-Endung] Unbetontes e bleibt e: Gipfeli, Meiteli (nicht Gipfäli).\n'
+              + '[l-erhalten] Das l wird IMMER ausgeschrieben, es wird NICHT vokalisiert. '
+              + 'Falsch wären Miuch, Gäud, Wäut – richtig sind Milch, Gäld, Wält. '
+              + 'ACHTUNG: Ein vorhandenes l ist NIE ein Fehler. Diese Regel greift nur, wenn im Text ein l zu u/u-Laut geworden ist.\n'
+              + '[Verb-Endung] 3. Person Einzahl hat -t: är lacht, är macht, är chunt, är het. '
+              + 'Mehrzahl hat -d: mir lached, si gönd, si hend, si sind. Bernische 2. Person Mehrzahl hat -t: dir lachet. '
+              + 'Nur wenn der Stamm auf t/d endet, steht -et: är wartet, är redet, är verhüratet.\n'
+              + '[Pronomen] Immer «si» (nie «se»), immer «ihr» (nie dir/der). Ihr-Formen: ihr, öich, öier/öiri/öies – nie euch/euer. '
+              + 'Betont/unbetont: är/er, mir/mer, iich/i.\n'
+              + '[Grossschreibung] du, dich, dir, dis bleiben klein. Höflichkeitsform gross: Ihr, Öich, Si, Öier.\n'
+              + '[Partizip] ge- wird g- (gmacht, gseh, gsii); vor Plosiven kein g (cho, ta, gange); '
+              + 'trennbare Vorsilbe + g (abegluegt); untrennbare Vorsilben ohne g (verzellt, verbrönnt, brichtet); '
+              + 'ch- wird im Partizip k- (choche → kochet).';
+        }
+
+        // Grundliste, falls die API-Liste (noch) nicht geladen ist
+        var KI_STANDARD_MODELLE = [
+            { id: 'claude-opus-5',              name: 'Claude Opus 5 – am stärksten' },
+            { id: 'claude-sonnet-5',            name: 'Claude Sonnet 5 – ausgewogen' },
+            { id: 'claude-fable-5',             name: 'Claude Fable 5 – für Sprache und Text' },
+            { id: 'claude-haiku-4-5-20251001',  name: 'Claude Haiku 4.5 – schnell und günstig' }
+        ];
+
+        function kiModellListe() {
+            var api = (state.ki.modelle || []);
+            if (api.length) return api;
+            return KI_STANDARD_MODELLE.slice();
+        }
+
+        // Beim Öffnen des KI-Reiters einmalig die echte Liste holen
+        var kiModelleGeholt = false;
+        function kiModelleAuto() {
+            if (kiModelleGeholt || !state.ki.key) return;
+            kiModelleGeholt = true;
+            fetch(KI_MODELS_URL + '?limit=100', {
+                headers: { 'x-api-key': state.ki.key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' }
+            }).then(function(r) { return r.ok ? r.json() : null; })
+              .then(function(d) {
+                  if (!d || !d.data) return;
+                  state.ki.modelle = d.data.map(function(m) { return { id: m.id, name: m.display_name || m.id }; });
+                  if (state.currentView === 'admin' && state.adminTab === 'ki') render();
+              }).catch(function() {});
         }
 
         function kiBereit() { return !!(state.ki && state.ki.key); }
@@ -1638,12 +1683,44 @@
             if (!t.trim()) { showToast('Bitte Text eingeben', 'warning'); return; }
             if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Einstellungen', 'error'); return; }
             state.pruefKiText = t; state.kiLaeuft = true; state.kiAntwort = ''; render();
-            var sys = kiRegelPrompt() + '\n\nAUFGABE: Prüfe den Text auf Verstösse gegen diese Regeln. '
-                + 'Hochdeutsche Regieanweisungen und Sprechernamen ignorierst du. '
-                + 'Antworte als Markdown mit zwei Abschnitten: '
-                + '«## Regelverstösse» (Tabelle: Wort | Regel | Vorschlag) und «## Hinweise» (Zweifelsfälle, z.B. Zusammensetzungen bei st/sp). '
-                + 'Wenn alles korrekt ist, sag das kurz. Sei knapp.';
-            kiFrage(sys, t, 3000, false).then(function(a) {
+
+            // Maschinenbefund als Grundlage mitgeben
+            var befund = [];
+            t.split('\n').forEach(function(z) {
+                if (state.pruefRegie !== false && regelIstRegie(z)) return;
+                var rest = z.replace(/^[A-ZÄÖÜ][A-ZÄÖÜa-zäöü\s.]{0,24}:/, '');
+                rest.split(/[^A-Za-zÄÖÜäöüßé'’´`-]+/).forEach(function(w) {
+                    if (!w || w.length < 2) return;
+                    var f = regelPruefeWort(w);
+                    if (f.length && f[0].vorschlag && f[0].vorschlag !== w)
+                        befund.push(w + ' → ' + f[0].vorschlag + ' [' + f[0].regel + ']');
+                });
+            });
+            var uniq = [];
+            befund.forEach(function(b) { if (uniq.indexOf(b) < 0) uniq.push(b); });
+
+            var sys = kiRegelPrompt() + '\n\n'
+              + 'AUFGABE: Prüfe den Mundarttext auf Verstösse gegen die obigen Regeln.\n\n'
+              + 'STRENGE AUSGABE-VORSCHRIFTEN:\n'
+              + '1. Liste NUR echte Verstösse. Ein Wort, das korrekt ist, gehört NICHT in die Tabelle.\n'
+              + '2. Der Vorschlag muss sich vom Wort UNTERSCHEIDEN. Wenn du nichts zu ändern hast, lass das Wort weg.\n'
+              + '3. Schreibe in der Spalte «Regel» den Regelnamen in eckigen Klammern, z.B. [st-Anfang]. Niemals eine Nummer.\n'
+              + '4. Die Spalte «Vorschlag» enthält NUR das korrigierte Wort, ohne Kommentar und ohne Klammerzusätze.\n'
+              + '5. Alles Unsichere, Zweifelhafte oder Erklärungsbedürftige kommt NICHT in die Tabelle, sondern unter «Hinweise».\n'
+              + '6. Ignoriere: hochdeutsche Regieanweisungen, Sprechernamen, Eigennamen, Ortsnamen und Fremdwörter.\n'
+              + '7. Wenn ein Wort in verschiedenen Dialekten unterschiedlich lautet, ist das KEIN Verstoss.\n\n'
+              + 'FORMAT:\n'
+              + '## Regelverstösse\n'
+              + '| Wort | Regel | Vorschlag |\n'
+              + '(nur echte Verstösse; wenn keine, schreibe stattdessen: «Keine Regelverstösse gefunden.»)\n\n'
+              + '## Hinweise\n'
+              + '(kurze Liste der Zweifelsfälle mit Begründung; wenn keine, weglassen)';
+
+            var user = 'TEXT:\n' + t;
+            if (uniq.length) user += '\n\n---\nDie regelbasierte Vorprüfung hat folgende Kandidaten gefunden. '
+              + 'Prüfe sie kritisch (manche können falsch sein) und ergänze, was ihr entgangen ist:\n' + uniq.join('\n');
+
+            kiFrage(sys, user, 3000, false).then(function(a) {
                 state.kiAntwort = a; state.kiLaeuft = false; render();
             }).catch(function(e) {
                 state.kiLaeuft = false; state.kiAntwort = '⚠️ ' + e.message; render();
@@ -1694,7 +1771,8 @@
             h += '<div><label class="wz-muted">API-Schlüssel</label>'
                + '<input type="password" class="input" id="ki-key" placeholder="sk-ant-..." value="' + escHtml(k.key) + '"></div>';
             h += '<div><label class="wz-muted">Modell</label><select class="input" id="ki-modell">';
-            var liste = k.modelle && k.modelle.length ? k.modelle : [{ id: k.modell, name: k.modell }];
+            kiModelleAuto();
+            var liste = kiModellListe();
             var drin = false;
             liste.forEach(function(m) { if (m.id === k.modell) drin = true; });
             if (!drin) liste = [{ id: k.modell, name: k.modell + ' (gespeichert)' }].concat(liste);
