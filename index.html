@@ -1380,10 +1380,21 @@
             if (bekannt.has(w)) return true;
             if (w.length < 3) return false;
             var kand = [];
-            // Endungen abschneiden
-            ['e','i','t','s','r','n'].forEach(function(e) { if (w.slice(-1) === e) kand.push(w.slice(0, -1)); });
-            ['er','et','te','ti','ne','en','es','em','ig','st'].forEach(function(e) { if (w.slice(-2) === e) kand.push(w.slice(0, -2)); });
-            ['ere','eri','ete','ige','igi'].forEach(function(e) { if (w.slice(-3) === e) kand.push(w.slice(0, -3)); });
+            // Endungen abschneiden – jeder Stamm auch mit angehängtem e (meinsch → mein → meine)
+            function schnitt(n) {
+                var st = w.slice(0, -n);
+                kand.push(st, st + 'e');
+            }
+            ['e','i','t','s','r','n'].forEach(function(e) { if (w.slice(-1) === e) schnitt(1); });
+            ['er','et','ed','te','ti','ne','en','es','em','ig','st','ts'].forEach(function(e) { if (w.slice(-2) === e) schnitt(2); });
+            ['ere','eri','ete','ige','igi','sch','end'].forEach(function(e) { if (w.slice(-3) === e) schnitt(3); });
+            ['isch','esch'].forEach(function(e) { if (w.slice(-4) === e) schnitt(4); });
+            // Umlaut-Mehrzahl: Wälder → wald, Bäum → baum, Chüe → chue
+            var uml = w.replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
+            if (uml !== w) {
+                kand.slice(0).forEach(function(k2) { kand.push(k2.replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u')); });
+                kand.push(uml);
+            }
             // Endungen anhängen
             kand.push(w + 'e', w + 'en', w + 'i');
             // i/e-Tausch am Schluss (jedi -> jede, sini -> sine)
@@ -1487,13 +1498,10 @@
             return r;
         }
 
-        // Endungen sind schwächere Kandidaten und kommen erst zum Schluss
-        function pruefEndungSchritt(x) {
-            var r = [x + 'e'];
-            if (x.slice(-1) === 'e') r.push(x.slice(0, -1));
-            return r;
-        }
-
+        /* Nur Laut-Schreibvarianten (Vokale, Dehnung, Auslaut) – KEINE Endungsänderungen.
+           Die Endung trägt die Beugung; sie zu «korrigieren» würde die Form zerstören
+           (us «hudlisch» dörf nid «hudle» wärde). Gebeugte Formen fängt der Stammvergleich
+           in pruefIstBekannt ab, nicht der Vorschlag. */
         function pruefVariantenTreffer(w) {
             var ges = {}, i;
             var stufe1 = pruefEinSchritt(w);
@@ -1501,9 +1509,6 @@
             var stufe2 = [];
             stufe1.forEach(function(v) { pruefEinSchritt(v).forEach(function(v2) { if (!ges[v2]) { ges[v2] = 1; stufe2.push(v2); } }); });
             for (i = 0; i < stufe2.length; i++) if (stufe2[i] !== w && pruefBekannt.has(stufe2[i])) return stufe2[i];
-            var stufe3 = pruefEndungSchritt(w);
-            stufe1.forEach(function(v) { pruefEndungSchritt(v).forEach(function(v2) { stufe3.push(v2); }); });
-            for (i = 0; i < stufe3.length; i++) if (stufe3[i] !== w && pruefBekannt.has(stufe3[i])) return stufe3[i];
             return null;
         }
 
@@ -1533,6 +1538,9 @@
                 for (var k = 0; k < liste.length; k++) {
                     var kand = liste[k];
                     if (kand.charAt(0) !== w.charAt(0) && kand.slice(-1) !== w.slice(-1)) continue;
+                    // Endungsschutz: Bei ungleicher Länge muss der letzte Buchstabe gleich bleiben,
+                    // sonst wäre der Unterschied eine Endung (Beugung) und kein Schreibfehler.
+                    if (kand.length !== w.length && kand.slice(-1) !== w.slice(-1)) continue;
                     var d = pruefAbstand(w, kand, max);
                     if (d > max || d === 0) continue;
                     var rang = d * 10 - (pruefIstVokalwechsel(w, kand) ? 5 : 0) - (d === 1 ? 2 : 0);
@@ -3563,28 +3571,76 @@
             uebWbSuche(wort);
         }
 
-        function uebWbSuche(wort) {
+        /* Mögliche Grundformen eines gebeugten deutschen Wortes.
+           «schlichen» → schleichen findet erst die KI-Stufe; die Regeln hier decken
+           die häufigen regelmässigen Formen ab: läuft→lauf(en), Häuser→haus,
+           gemacht→machen, schöne→schön, sagte→sagen. */
+        function uebLemmata(wort) {
+            var lw = wort.toLowerCase(), out = [], da = {};
+            function add(x) { if (x && x.length >= 3 && !da[x]) { da[x] = 1; out.push(x); } }
+            add(lw);
+            var m;
+            if ((m = /^ge(.+)t$/.exec(lw)))  { add(m[1] + 'en'); add(m[1] + 'n'); }     // gemacht → machen
+            if ((m = /^ge(.+)en$/.exec(lw))) { add(m[1] + 'en'); }                       // gelaufen → laufen
+            // Verb- und Adjektivendungen abschneiden, Infinitiv anbieten
+            ['ste','st','est','ete','eten','etest','te','ten','test','tet','ende','end','er','es','em','en','et','e','t','n','s'].forEach(function(e) {
+                if (lw.length > e.length + 2 && lw.slice(-e.length) === e) {
+                    var st = lw.slice(0, -e.length);
+                    add(st); add(st + 'en'); add(st + 'e'); add(st + 'n');
+                }
+            });
+            // Umlaut-Rückbildung (läuft → lauf, Häuser → haus)
+            var uml = lw.replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
+            if (uml !== lw) {
+                add(uml);
+                ['er','en','e','n','t','st'].forEach(function(e) {
+                    if (uml.length > e.length + 2 && uml.slice(-e.length) === e) { add(uml.slice(0, -e.length)); add(uml.slice(0, -e.length) + 'en'); }
+                });
+            }
+            return out.slice(0, 10);
+        }
+
+        function uebWbSuche(wort, schonGrundform) {
             state.uebWb = { wort: wort, treffer: null, laeuft: true };
             uebWbBox();
-            var q = encodeURIComponent('*' + wort + '*');
-            supabaseCall('woerter?select=id,begriff,wortart,synonyme,bedeutung,beispielsatz&or=(synonyme.ilike.' + q + ',begriff.ilike.' + q + ')&limit=40')
+            var kand = schonGrundform ? [wort.toLowerCase()] : uebLemmata(wort);
+            var teile = kand.map(function(k) { return 'synonyme.ilike.' + encodeURIComponent('*' + k + '*'); });
+            teile.push('begriff.ilike.' + encodeURIComponent('*' + wort + '*'));
+            supabaseCall('woerter?select=id,begriff,wortart,synonyme,bedeutung,beispielsatz&or=(' + teile.join(',') + ')&limit=60')
                 .then(function(d) {
                     d = d || [];
-                    var lw = wort.toLowerCase();
                     d.forEach(function(t) {
-                        t._rang = 3;
+                        t._rang = 5;
                         var syn = (t.synonyme || '').toLowerCase().split(/\s*,\s*/);
-                        if (syn.indexOf(lw) >= 0) t._rang = 0;                    // exakt als Synonym
-                        else if (syn.some(function(s) { return s.indexOf(lw) === 0; })) t._rang = 1;
-                        else if ((t.begriff || '').toLowerCase() === lw) t._rang = 2;
+                        for (var i = 0; i < kand.length; i++) {
+                            if (syn.indexOf(kand[i]) >= 0) { t._rang = Math.min(t._rang, i === 0 ? 0 : 1); break; }
+                            if (syn.some(function(s) { return s.indexOf(kand[i]) === 0; })) t._rang = Math.min(t._rang, 2);
+                        }
+                        if ((t.begriff || '').toLowerCase() === wort.toLowerCase()) t._rang = Math.min(t._rang, 3);
                     });
+                    d = d.filter(function(t) { return t._rang < 5; });
                     d.sort(function(x, y) { return x._rang - y._rang; });
-                    state.uebWb = { wort: wort, treffer: d.slice(0, 12), laeuft: false };
+                    if (!d.length && !schonGrundform && kiBereit()) { uebWbGrundform(wort); return; }
+                    state.uebWb = { wort: wort, treffer: d.slice(0, 12), laeuft: false, grundform: schonGrundform ? wort : null };
                     uebWbBox();
                 }).catch(function() {
                     state.uebWb = { wort: wort, treffer: [], laeuft: false };
                     uebWbBox();
                 });
+        }
+
+        // Zweite Stufe: die KI nennt die Grundform (schlich → schleichen), dann neue Suche
+        function uebWbGrundform(wort) {
+            state.uebWb = { wort: wort, treffer: null, laeuft: true, sucheGrundform: true };
+            uebWbBox();
+            kiFrage('Nenne AUSSCHLIESSLICH die Grundform des deutschen Wortes (Infinitiv bei Verben, Nominativ Einzahl bei Substantiven, ungebeugt bei Adjektiven). Nur das eine Wort, nichts sonst.',
+                    wort, 20, false)
+                .then(function(a) {
+                    var g = (a || '').trim().split(/\s/)[0].replace(/[^A-Za-zÄÖÜäöüß-]/g, '');
+                    if (g && g.toLowerCase() !== wort.toLowerCase()) uebWbSuche(g, true);
+                    else { state.uebWb = { wort: wort, treffer: [], laeuft: false }; uebWbBox(); }
+                })
+                .catch(function() { state.uebWb = { wort: wort, treffer: [], laeuft: false }; uebWbBox(); });
         }
 
         function uebWbBox() {
@@ -3593,9 +3649,10 @@
             var s = state.uebWb;
             if (!s) { box.innerHTML = ''; return; }
             var h = '<div style="border:1px solid var(--border-color);background:var(--bg-tertiary);border-radius:8px;padding:10px;margin-top:8px;font-size:13px;">'
-                  + '<b>Im Wörterbuch zu «' + escHtml(s.wort) + '»</b> '
-                  + '<button class="wz-mini grau" style="float:right;" onclick="state.uebWb=null;uebWbBox();">✕</button>';
-            if (s.laeuft) h += '<div class="wz-muted">suche…</div>';
+                  + '<b>Im Wörterbuch zu «' + escHtml(s.wort) + '»</b>'
+                  + (s.grundform ? ' <span class="wz-muted">(Grundform)</span>' : '')
+                  + ' <button class="wz-mini grau" style="float:right;" onclick="state.uebWb=null;uebWbBox();">✕</button>';
+            if (s.laeuft) h += '<div class="wz-muted">' + (s.sucheGrundform ? 'bestimme die Grundform…' : 'suche…') + '</div>';
             else if (!s.treffer || !s.treffer.length) h += '<div class="wz-muted" style="margin-top:6px;">Nichts gefunden. Frag im Gespräch rechts nach anderen Wendungen – oder lass im Netz suchen.</div>';
             else s.treffer.forEach(function(t) {
                 h += '<div style="margin-top:7px;border-top:1px solid var(--border-color);padding-top:6px;">'
