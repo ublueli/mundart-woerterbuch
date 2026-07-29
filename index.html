@@ -3226,41 +3226,156 @@
             showToast(kapitel.length + ' Kapitel, ' + nAbs + ' Absätze', 'success');
         }
 
+        /* ---- Speichern: einmal die Datei im Drive-Ordner wählen, danach immer dorthin ----
+           Nutzt die Datei-Schnittstelle von Chrome/Edge (showSaveFilePicker). Die Dateiwahl
+           wird im Browser gemerkt und überlebt auch einen Neustart. Safari/Firefox
+           bekommen weiterhin den normalen Download. */
+
+        var uebHandle = null;
+
+        function uebIdb(cb) {
+            try {
+                var req = indexedDB.open('mw-uebersetzen', 1);
+                req.onupgradeneeded = function() { req.result.createObjectStore('kv'); };
+                req.onsuccess = function() { cb(req.result); };
+                req.onerror = function() { cb(null); };
+            } catch (e) { cb(null); }
+        }
+
+        function uebHandleMerken(h) {
+            uebHandle = h;
+            state.uebDateiName = h && h.name;
+            uebIdb(function(db) {
+                if (!db) return;
+                try { db.transaction('kv', 'readwrite').objectStore('kv').put(h, 'handle'); } catch (e) {}
+            });
+        }
+
+        function uebHandleHolen(cb) {
+            if (uebHandle) return cb(uebHandle);
+            uebIdb(function(db) {
+                if (!db) return cb(null);
+                try {
+                    var r = db.transaction('kv').objectStore('kv').get('handle');
+                    r.onsuccess = function() { uebHandle = r.result || null; cb(uebHandle); };
+                    r.onerror = function() { cb(null); };
+                } catch (e) { cb(null); }
+            });
+        }
+
         function uebSpeichern() {
             var p = uebP();
             if (!p) return;
             p.geaendert = new Date().toISOString().slice(0, 10);
+            if (window.showSaveFilePicker) {
+                uebHandleHolen(function(h) {
+                    if (h) uebInDatei(h, true);
+                    else uebSpeichernUnter();
+                });
+            } else {
+                uebDownload();
+            }
+        }
+
+        function uebSpeichernUnter() {
+            var p = uebP();
+            if (!p) return;
+            if (!window.showSaveFilePicker) { uebDownload(); return; }
+            var name = (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_') + '.uebersetzung.json';
+            window.showSaveFilePicker({
+                suggestedName: name,
+                types: [{ description: 'Übersetzungsprojekt', accept: { 'application/json': ['.json'] } }]
+            }).then(function(h) {
+                uebHandleMerken(h);
+                uebInDatei(h, false);
+            }).catch(function(e) {
+                if (e && e.name === 'AbortError') return;   // abgebrochen
+                uebDownload();
+            });
+        }
+
+        function uebInDatei(h, gespeichertesHandle) {
+            Promise.resolve().then(function() {
+                return h.queryPermission({ mode: 'readwrite' });
+            }).then(function(st) {
+                if (st === 'granted') return st;
+                return h.requestPermission({ mode: 'readwrite' });
+            }).then(function(st) {
+                if (st !== 'granted') throw new Error('Keine Schreib-Erlaubnis');
+                return h.createWritable();
+            }).then(function(w) {
+                return w.write(JSON.stringify(uebP())).then(function() { return w.close(); });
+            }).then(function() {
+                state.uebDateiName = h.name;
+                var el = document.getElementById('ueb-datei-name');
+                if (el) el.textContent = h.name;
+                showToast('✓ Gespeichert: ' + h.name, 'success');
+            }).catch(function(e) {
+                if (e && e.name === 'AbortError') return;
+                if (gespeichertesHandle) {
+                    // Datei verschoben oder Erlaubnis weg → neu wählen lassen
+                    uebHandle = null;
+                    showToast('Die bisherige Datei ist nicht mehr erreichbar – bitte neu wählen', 'warning');
+                    uebSpeichernUnter();
+                } else {
+                    showToast('Speichern fehlgeschlagen: ' + e.message, 'error');
+                }
+            });
+        }
+
+        function uebDownload() {
+            var p = uebP();
             var name = (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_') + '.uebersetzung.json';
             var blob = new Blob([JSON.stringify(p)], { type: 'application/json' });
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob); a.download = name;
             document.body.appendChild(a); a.click();
             setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-            showToast('Gespeichert als ' + name + ' – leg die Datei z. B. in deinen Drive-Ordner', 'success');
+            showToast('Gespeichert als ' + name + ' (im Download-Ordner)', 'success');
+        }
+
+        /* ---- Laden ---- */
+        function uebLadenKlick() {
+            if (window.showOpenFilePicker) {
+                window.showOpenFilePicker({
+                    types: [{ description: 'Übersetzungsprojekt', accept: { 'application/json': ['.json'] } }]
+                }).then(function(hs) {
+                    var h = hs[0];
+                    uebHandleMerken(h);           // künftige 💾 gehen in dieselbe Datei
+                    return h.getFile();
+                }).then(function(f) { return f.text(); })
+                  .then(uebProjektAusText)
+                  .catch(function(e) { if (e && e.name !== 'AbortError') showToast('Fehler: ' + e.message, 'error'); });
+            } else {
+                var inp = document.getElementById('ueb-datei-input');
+                if (inp) inp.click();
+            }
         }
 
         function uebLadenDatei(input) {
             var f = input.files && input.files[0];
             if (!f) return;
             var r = new FileReader();
-            r.onload = function() {
-                try {
-                    var p = JSON.parse(r.result);
-                    if (p.format !== 'mundart-uebersetzung' || !p.kapitel) throw new Error('Das ist keine Projektdatei');
-                    p.kapitel.forEach(function(k) { k.absaetze.forEach(function(a) { if (!a.chat) a.chat = []; }); });
-                    state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0;
-                    // Beim zuletzt offenen Absatz weitermachen
-                    for (var i = 0; i < p.kapitel.length; i++) {
-                        for (var j = 0; j < p.kapitel[i].absaetze.length; j++) {
-                            if (p.kapitel[i].absaetze[j].status !== 'fertig') { state.uebKap = i; state.uebAbs = j; i = p.kapitel.length; break; }
-                        }
-                    }
-                    state.uebWort = null; state.uebWb = null;
-                    uebMerken(); render();
-                    showToast('«' + (p.titel || '') + '» geladen', 'success');
-                } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
-            };
+            r.onload = function() { uebProjektAusText(r.result); };
             r.readAsText(f);
+        }
+
+        function uebProjektAusText(text) {
+            try {
+                var p = JSON.parse(text);
+                if (p.format !== 'mundart-uebersetzung' || !p.kapitel) throw new Error('Das ist keine Projektdatei');
+                p.kapitel.forEach(function(k) { k.absaetze.forEach(function(a) { if (!a.chat) a.chat = []; }); });
+                state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0;
+                // Beim zuletzt offenen Absatz weitermachen
+                for (var i = 0; i < p.kapitel.length; i++) {
+                    for (var j = 0; j < p.kapitel[i].absaetze.length; j++) {
+                        if (p.kapitel[i].absaetze[j].status !== 'fertig') { state.uebKap = i; state.uebAbs = j; i = p.kapitel.length; break; }
+                    }
+                }
+                state.uebWort = null; state.uebWb = null;
+                uebMerken(); render();
+                showToast('«' + (p.titel || '') + '» geladen', 'success');
+            } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
         }
 
         function uebMerken() {
@@ -3726,6 +3841,7 @@
                   + '<button class="btn" onclick="uebSprechfassung()">🗣️ Sprechfassung öffnen (zum Drucken)</button>'
                   + '<button class="btn" onclick="uebTextExport()">⬇️ Übersetzung als Textdatei</button>'
                   + '<button class="btn" onclick="uebZurPruefung()">🔍 Zur Schreibweise-Prüfung schicken</button>'
+                  + '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal();uebSpeichernUnter()">💾 An anderem Ort speichern…</button>'
                   + '</div>';
             showModal('📤 Export', c);
         }
@@ -3799,8 +3915,8 @@
                    + 'Erklärungen und deine Fassung. Du speicherst sie bei dir (z. B. im Drive-Ordner) und lädst sie auf jedem Gerät wieder.</p>';
                 h += '<div class="wz-row">';
                 h += '<button class="btn" onclick="uebNeuModal()">➕ Neues Projekt</button>';
-                h += '<label class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">📂 Projektdatei laden'
-                   + '<input type="file" accept=".json,application/json" style="display:none;" onchange="uebLadenDatei(this)"></label>';
+                h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebLadenKlick()">📂 Projektdatei laden</button>'
+                   + '<input type="file" id="ueb-datei-input" accept=".json,application/json" style="display:none;" onchange="uebLadenDatei(this)">';
                 if (zs) h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebZwischenstandLaden()">↩ Zwischenstand: «' + escHtml(zs.titel || '') + '»</button>';
                 h += '</div></div></div>';
                 return h;
@@ -3822,7 +3938,8 @@
             h += '<button class="wz-mini grau" onclick="uebGlossarModal()">📇 Glossar</button>';
             h += '<button class="wz-mini grau" onclick="uebKonkordanzModal()">🔎 Konkordanz</button>';
             h += '<button class="wz-mini grau" onclick="uebExportModal()">📤 Export</button>';
-            h += '<button class="wz-mini" onclick="uebSpeichern()">💾 Speichern</button>';
+            h += '<button class="wz-mini" onclick="uebSpeichern()" title="Beim ersten Mal wählst du die Datei (z. B. im Drive-Ordner), danach geht es immer dorthin.">💾 Speichern</button>';
+            h += '<span class="wz-muted" id="ueb-datei-name" style="font-size:11px;">' + escHtml(state.uebDateiName || '') + '</span>';
             h += '<button class="wz-mini grau" onclick="uebSchliessen()">✕</button>';
             h += '</div>';
 
