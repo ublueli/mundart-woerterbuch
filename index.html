@@ -3277,11 +3277,21 @@
             }
         }
 
+        // Dateiname: Projektname-woerterbuch-Datum-Uhrzeit
+        function uebDateiname() {
+            var p = uebP();
+            var d = new Date();
+            function z(n) { return (n < 10 ? '0' : '') + n; }
+            return (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_')
+                + '-woerterbuch-' + d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate())
+                + '-' + z(d.getHours()) + z(d.getMinutes()) + '.json';
+        }
+
         function uebSpeichernUnter() {
             var p = uebP();
             if (!p) return;
             if (!window.showSaveFilePicker) { uebDownload(); return; }
-            var name = (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_') + '.uebersetzung.json';
+            var name = uebDateiname();
             window.showSaveFilePicker({
                 suggestedName: name,
                 types: [{ description: 'Übersetzungsprojekt', accept: { 'application/json': ['.json'] } }]
@@ -3325,7 +3335,7 @@
 
         function uebDownload() {
             var p = uebP();
-            var name = (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_') + '.uebersetzung.json';
+            var name = uebDateiname();
             var blob = new Blob([JSON.stringify(p)], { type: 'application/json' });
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob); a.download = name;
@@ -4022,7 +4032,6 @@
             tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Tabelle</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'ki' ? ' active' : '') + '" onclick="changeAdminTab(\'ki\')">🤖 KI</button>';
-            tabs += '<button class="tab-btn' + (state.adminTab === 'werkstatt' ? ' active' : '') + '" onclick="changeAdminTab(\'werkstatt\')">🔧 Werkstatt</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'uebersetzen' ? ' active' : '') + '" onclick="changeAdminTab(\'uebersetzen\')">📖 Übersetzen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
             tabs += '<button class="tab-btn" onclick="handleLogout()" style="margin-left:auto;">🔒 Abmelden</button>';
@@ -4031,7 +4040,7 @@
             if (state.adminTab === 'tabelle') return tabs + renderAdminTable();
             if (state.adminTab === 'pruefen') return tabs + renderPruefen();
             if (state.adminTab === 'ki') return tabs + renderKI();
-            if (state.adminTab === 'werkstatt') return tabs + renderWerkstatt();
+            if (state.adminTab === 'werkstatt') { state.adminTab = 'uebersetzen'; }   // alte Werkstatt → Übersetzen
             if (state.adminTab === 'uebersetzen') return tabs + renderUebersetzen();
             return tabs + renderExportTab();
         }
