@@ -3706,18 +3706,24 @@
                   + '<b>Im Wörterbuch zu «' + escHtml(s.wort) + '»</b>'
                   + (s.grundform ? ' <span class="wz-muted">(Grundform)</span>' : '')
                   + ' <button class="wz-mini grau" style="float:right;" onclick="state.uebWb=null;uebWbBox();">✕</button>';
-            if (s.laeuft) h += '<div class="wz-muted">' + (s.sucheGrundform ? 'bestimme die Grundform aus dem Satz…' : 'suche…') + '</div>';
-            else if (!s.treffer || !s.treffer.length) h += '<div class="wz-muted" style="margin-top:6px;">Nichts gefunden. Frag im Gespräch rechts nach anderen Wendungen – oder lass im Netz suchen.</div>';
-            if (!s.laeuft && !s.grundform && kiBereit())
-                h += '<div style="margin-top:8px;"><button class="wz-mini grau" onclick="uebWbGrundform(state.uebWb.wort)">🤖 Grundform aus dem Satz bestimmen und neu suchen</button></div>';
-            else s.treffer.forEach(function(t) {
-                h += '<div style="margin-top:7px;border-top:1px solid var(--border-color);padding-top:6px;">'
-                   + '<b>' + escHtml(t.begriff || '') + '</b>'
-                   + (t.wortart ? ' <span class="wz-muted">(' + escHtml(t.wortart) + ')</span>' : '')
-                   + (t.bedeutung ? '<br><span class="wz-muted">' + escHtml(String(t.bedeutung).slice(0, 90)) + '</span>' : '')
-                   + (t.beispielsatz ? '<br><i>' + escHtml(String(t.beispielsatz).slice(0, 110)) + '</i>' : '')
-                   + '</div>';
-            });
+            if (s.laeuft) {
+                h += '<div class="wz-muted">' + (s.sucheGrundform ? 'bestimme die Grundform aus dem Satz…' : 'suche…') + '</div>';
+            } else {
+                if (!s.treffer || !s.treffer.length) {
+                    h += '<div class="wz-muted" style="margin-top:6px;">Nichts gefunden. Frag im Gespräch rechts nach anderen Wendungen – oder lass im Netz suchen.</div>';
+                } else {
+                    s.treffer.forEach(function(t) {
+                        h += '<div style="margin-top:7px;border-top:1px solid var(--border-color);padding-top:6px;">'
+                           + '<b>' + escHtml(t.begriff || '') + '</b>'
+                           + (t.wortart ? ' <span class="wz-muted">(' + escHtml(t.wortart) + ')</span>' : '')
+                           + (t.bedeutung ? '<br><span class="wz-muted">' + escHtml(String(t.bedeutung).slice(0, 90)) + '</span>' : '')
+                           + (t.beispielsatz ? '<br><i>' + escHtml(String(t.beispielsatz).slice(0, 110)) + '</i>' : '')
+                           + '</div>';
+                    });
+                }
+                if (!s.grundform && kiBereit())
+                    h += '<div style="margin-top:8px;"><button class="wz-mini grau" onclick="uebWbGrundform(state.uebWb.wort)">🤖 Grundform aus dem Satz bestimmen und neu suchen</button></div>';
+            }
             h += '</div>';
             box.innerHTML = h;
         }
