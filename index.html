@@ -3303,7 +3303,7 @@
             var a = uebAbsObj();
             if (!a) return;
             a[name] = wert;
-            if (name === 'eigene') uebGlossarHinweisNeu();
+            if (name === 'eigene') { uebGlossarHinweisNeu(); uebBisherNeu(); }
             uebMerken();
         }
 
@@ -3549,6 +3549,81 @@
         function uebChatLeeren() {
             var a = uebAbsObj();
             if (a) { a.chat = []; uebMerken(); uebChatBox(); }
+        }
+
+        /* ---- Bisher übersetzt (nummeriert herauskopieren, über Nummern wiedereinsetzen) ----
+           Jeder Absatz trägt seine Adresse: ¶Kapitel.Absatz – daran erkennt die App beim
+           Wiedereinsetzen, wohin der Text gehört. Reihenfolge und Lücken spielen keine Rolle. */
+
+        function uebKapText() {
+            var k = uebKapObj();
+            if (!k) return '';
+            var ki = (state.uebKap || 0) + 1;
+            var teile = [];
+            k.absaetze.forEach(function(a, ai) {
+                if ((a.eigene || '').trim()) teile.push('¶' + ki + '.' + (ai + 1) + '  ' + a.eigene.trim());
+            });
+            return teile.join('\n\n');
+        }
+
+        function uebWerkTextNummeriert() {
+            var p = uebP(), teile = [];
+            p.kapitel.forEach(function(k, ki) {
+                k.absaetze.forEach(function(a, ai) {
+                    if ((a.eigene || '').trim()) teile.push('¶' + (ki + 1) + '.' + (ai + 1) + '  ' + a.eigene.trim());
+                });
+            });
+            return teile.join('\n\n');
+        }
+
+        function uebBisherNeu() {
+            var ta = document.getElementById('ueb-bisher');
+            if (ta) ta.value = uebKapText();
+        }
+
+        function uebBisherKopieren(ganzes) {
+            var t = ganzes ? uebWerkTextNummeriert() : uebKapText();
+            if (!t.trim()) { showToast('Noch nichts übersetzt', 'warning'); return; }
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function() { showToast('Kopiert – die ¶-Nummern bitte stehen lassen', 'success'); });
+        }
+
+        function uebEinsetzenModal() {
+            var c = '<p class="wz-muted" style="margin-bottom:8px;">Füge hier den in Pages überarbeiteten Text ein – Kapitel oder ganzes Werk. '
+                  + 'Die App erkennt jeden Absatz an seiner <b>¶-Nummer</b> und legt ihn an der richtigen Stelle ab. '
+                  + 'Reihenfolge und Lücken spielen keine Rolle; nur die Nummern müssen stehen bleiben.</p>'
+                  + '<textarea id="ueb-einsetzen-ta" class="input" rows="12"></textarea>'
+                  + '<div style="margin-top:12px;display:flex;gap:10px;">'
+                  + '<button class="btn" onclick="uebEinsetzen()">Einsetzen</button>'
+                  + '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal()">Abbrechen</button></div>';
+            showModal('↩ Überarbeitete Fassung einsetzen', c);
+        }
+
+        function uebEinsetzen() {
+            var p = uebP();
+            var ta = document.getElementById('ueb-einsetzen-ta');
+            var text = (ta ? ta.value : '').trim();
+            if (!text) { showToast('Nichts eingefügt', 'warning'); return; }
+            var re = /¶\s*(\d+)\s*\.\s*(\d+)\s*/g;
+            var marken = [], m;
+            while ((m = re.exec(text)) !== null) marken.push({ kap: parseInt(m[1], 10) - 1, abs: parseInt(m[2], 10) - 1, von: m.index, bis: re.lastIndex });
+            if (!marken.length) {
+                showToast('Keine ¶-Nummern gefunden. Sie müssen im Text stehen bleiben, sonst weiss die App nicht, wohin die Absätze gehören.', 'error');
+                return;
+            }
+            var uebernommen = 0, fremd = 0;
+            marken.forEach(function(mk, i) {
+                var inhalt = text.slice(mk.bis, i + 1 < marken.length ? marken[i + 1].von : text.length).trim();
+                if (!inhalt) return;
+                var k = p.kapitel[mk.kap];
+                var a = k && k.absaetze[mk.abs];
+                if (!a) { fremd++; return; }
+                a.eigene = inhalt;
+                uebernommen++;
+            });
+            uebMerken(); closeModal(); render();
+            showToast('✓ ' + uebernommen + ' Absätze übernommen'
+                + (fremd ? ' – ' + (fremd === 1 ? 'eine Nummer gab es nicht, übersprungen' : fremd + ' Nummern gab es nicht, übersprungen') : ''),
+                fremd ? 'warning' : 'success');
         }
 
         /* ---- Glossar ---- */
@@ -3802,7 +3877,21 @@
             h += '<div class="wz-row" style="margin-top:4px;"><button class="wz-mini grau" onclick="uebChatLeeren()">Gespräch löschen</button></div>';
             h += '</div>';
 
+            h += '</div>';
+
+            // Bisher übersetzt – zum Herauskopieren und Wiedereinsetzen
+            h += '<div class="wz-box" style="margin-top:14px;"><h3>Bisher übersetzt'
+               + (p.kapitel.length > 1 ? ' – ' + escHtml(k.titel) : '') + '</h3>';
+            h += '<textarea id="ueb-bisher" class="input ueb-ta" readonly style="min-height:140px;background:var(--bg-secondary);" '
+               + 'placeholder="Hier erscheint der übersetzte Text dieses Kapitels, Absatz für Absatz.">' + escHtml(uebKapText()) + '</textarea>';
+            h += '<div class="wz-row" style="margin-top:8px;">';
+            h += '<button class="wz-mini" onclick="uebBisherKopieren(false)">📋 Kapitel kopieren</button>';
+            h += '<button class="wz-mini grau" onclick="uebBisherKopieren(true)">📋 Ganzes Werk kopieren</button>';
+            h += '<button class="wz-mini grau" onclick="uebEinsetzenModal()">↩ Überarbeitete Fassung einsetzen</button>';
+            h += '<span class="wz-muted">Zum Weiterbearbeiten in Pages. Die ¶-Nummern sind die Adressen der Absätze – stehen lassen, dann findet beim Einsetzen alles an seinen Platz.</span>';
             h += '</div></div>';
+
+            h += '</div>';
             setTimeout(function() { uebChatBox(); uebGlossarHinweisNeu(); }, 0);
             return h;
         }
