@@ -3229,6 +3229,7 @@
                 glossar: [], kapitel: kapitel
             };
             state.uebKap = 0; state.uebAbs = 0; state.uebWort = null; state.uebWb = null;
+            uebHandleLoeschen();   // neues Projekt darf nie in die Datei eines alten schreiben
             closeModal(); uebMerken(); render();
             var nAbs = 0; kapitel.forEach(function(k) { nAbs += k.absaetze.length; });
             showToast(kapitel.length + ' Kapitel, ' + nAbs + ' Absätze', 'success');
@@ -3271,13 +3272,24 @@
             });
         }
 
+        function uebHandleLoeschen() {
+            uebHandle = null;
+            state.uebDateiName = null;
+            uebIdb(function(db) {
+                if (!db) return;
+                try { db.transaction('kv', 'readwrite').objectStore('kv').delete('handle'); } catch (e) {}
+            });
+        }
+
         function uebSpeichern() {
             var p = uebP();
             if (!p) return;
             p.geaendert = new Date().toISOString().slice(0, 10);
             if (window.showSaveFilePicker) {
                 uebHandleHolen(function(h) {
-                    if (h) uebInDatei(h, true);
+                    // Nur in die gemerkte Datei schreiben, wenn sie WIRKLICH zu diesem Projekt gehört –
+                    // sonst Dialog zeigen. Verhindert stilles Schreiben in eine fremde Datei.
+                    if (h && p.dateiname && h.name === p.dateiname) uebInDatei(h, true);
                     else uebSpeichernUnter();
                 });
             } else {
@@ -3322,6 +3334,7 @@
                 if (st !== 'granted') throw new Error('Keine Schreib-Erlaubnis');
                 return h.createWritable();
             }).then(function(w) {
+                uebP().dateiname = h.name;   // das Projekt kennt seine Datei
                 return w.write(JSON.stringify(uebP())).then(function() { return w.close(); });
             }).then(function() {
                 state.uebDateiName = h.name;
@@ -3360,10 +3373,11 @@
                 }).then(function(hs) {
                     var h = hs[0];
                     uebHandleMerken(h);           // künftige 💾 gehen in dieselbe Datei
-                    return h.getFile();
-                }).then(function(f) { return f.text(); })
-                  .then(uebProjektAusText)
-                  .catch(function(e) { if (e && e.name !== 'AbortError') showToast('Fehler: ' + e.message, 'error'); });
+                    return h.getFile().then(function(f) { return f.text(); }).then(function(txt) {
+                        uebProjektAusText(txt);
+                        if (uebP()) { uebP().dateiname = h.name; state.uebDateiName = h.name; uebMerken(); }
+                    });
+                }).catch(function(e) { if (e && e.name !== 'AbortError') showToast('Fehler: ' + e.message, 'error'); });
             } else {
                 var inp = document.getElementById('ueb-datei-input');
                 if (inp) inp.click();
@@ -3565,6 +3579,12 @@
             var wort = '';
             if (ta.selectionStart != null) {
                 wort = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+                // Den Satz rund um die Klickstelle merken – für die Grundform-Bestimmung im Zusammenhang
+                var t = ta.value, i = ta.selectionStart;
+                var von = Math.max(t.lastIndexOf('.', i), t.lastIndexOf('!', i), t.lastIndexOf('?', i), t.lastIndexOf('\n', i)) + 1;
+                var bis = t.length;
+                ['.', '!', '?', '\n'].forEach(function(z) { var x = t.indexOf(z, i); if (x >= 0 && x < bis) bis = x + 1; });
+                state.uebWbSatz = t.slice(von, bis).trim();
             }
             wort = wort.replace(/[^A-Za-zÄÖÜäöüßéèà-]/g, '');
             if (wort.length < 3) return;
@@ -3576,49 +3596,76 @@
            die häufigen regelmässigen Formen ab: läuft→lauf(en), Häuser→haus,
            gemacht→machen, schöne→schön, sagte→sagen. */
         function uebLemmata(wort) {
-            var lw = wort.toLowerCase(), out = [], da = {};
-            function add(x) { if (x && x.length >= 3 && !da[x]) { da[x] = 1; out.push(x); } }
-            add(lw);
+            var lw = wort.toLowerCase(), prio = [], rest = [], da = {};
+            function add(liste, x) { if (x && x.length >= 3 && !da[x]) { da[x] = 1; liste.push(x); } }
+            add(prio, lw);
             var m;
-            if ((m = /^ge(.+)t$/.exec(lw)))  { add(m[1] + 'en'); add(m[1] + 'n'); }     // gemacht → machen
-            if ((m = /^ge(.+)en$/.exec(lw))) { add(m[1] + 'en'); }                       // gelaufen → laufen
-            // Verb- und Adjektivendungen abschneiden, Infinitiv anbieten
+            // Starke Lemmata zuerst: ge-Partizip und Umlaut-Rückbildung ändern den Wortanfang,
+            // sind aber die verlässlichsten Grundformen
+            if ((m = /^ge(.+)t$/.exec(lw)))  { add(prio, m[1] + 'en'); add(prio, m[1] + 'n'); }   // gemacht → machen
+            if ((m = /^ge(.+)en$/.exec(lw))) { add(prio, m[1] + 'en'); }                          // gelaufen → laufen
+            var uml = lw.replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
+            if (uml !== lw) {
+                add(prio, uml);
+                ['er','en','e','n','t','st'].forEach(function(e) {
+                    if (uml.length > e.length + 2 && uml.slice(-e.length) === e) { add(prio, uml.slice(0, -e.length)); add(prio, uml.slice(0, -e.length) + 'en'); }
+                });
+            }
+            // Endungsvarianten als schwächere Kandidaten
             ['ste','st','est','ete','eten','etest','te','ten','test','tet','ende','end','er','es','em','en','et','e','t','n','s'].forEach(function(e) {
                 if (lw.length > e.length + 2 && lw.slice(-e.length) === e) {
                     var st = lw.slice(0, -e.length);
-                    add(st); add(st + 'en'); add(st + 'e'); add(st + 'n');
+                    add(rest, st); add(rest, st + 'en'); add(rest, st + 'e'); add(rest, st + 'n');
                 }
             });
-            // Umlaut-Rückbildung (läuft → lauf, Häuser → haus)
-            var uml = lw.replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u');
-            if (uml !== lw) {
-                add(uml);
-                ['er','en','e','n','t','st'].forEach(function(e) {
-                    if (uml.length > e.length + 2 && uml.slice(-e.length) === e) { add(uml.slice(0, -e.length)); add(uml.slice(0, -e.length) + 'en'); }
-                });
+            // Die dem Wort ähnlichsten Endungsvarianten zuerst
+            function gleichVorn(x) {
+                var n = 0;
+                while (n < x.length && n < lw.length && x.charAt(n) === lw.charAt(n)) n++;
+                return n;
             }
-            return out.slice(0, 10);
+            rest.sort(function(a, b) { return (gleichVorn(b) - gleichVorn(a)) || (b.length - a.length); });
+            return prio.concat(rest).slice(0, 10);
+        }
+
+        // Suche von Hand: eingegebenes Wort gilt als Grundform, keine Kandidatenbildung nötig
+        function uebWbHand() {
+            var el = document.getElementById('ueb-wb-eingabe');
+            var w = (el ? el.value : '').trim().replace(/[^A-Za-zÄÖÜäöüßéèà -]/g, '');
+            if (w.length < 3) { showToast('Mindestens drei Buchstaben', 'warning'); return; }
+            state.uebWbSatz = '';
+            uebWbSuche(w, true);
         }
 
         function uebWbSuche(wort, schonGrundform) {
             state.uebWb = { wort: wort, treffer: null, laeuft: true };
             uebWbBox();
-            var kand = schonGrundform ? [wort.toLowerCase()] : uebLemmata(wort);
+            var lw = wort.toLowerCase();
+            // Kurzstämme unter 4 Buchstaben suchen zu viel Zufall («wei» steckt in weiss, weil, weinen)
+            var kand = (schonGrundform ? [lw] : uebLemmata(wort)).filter(function(k) { return k.length >= 4 || k === lw; });
             var teile = kand.map(function(k) { return 'synonyme.ilike.' + encodeURIComponent('*' + k + '*'); });
-            teile.push('begriff.ilike.' + encodeURIComponent('*' + wort + '*'));
-            supabaseCall('woerter?select=id,begriff,wortart,synonyme,bedeutung,beispielsatz&or=(' + teile.join(',') + ')&limit=60')
+            teile.push('begriff.ilike.' + encodeURIComponent(lw));
+            supabaseCall('woerter?select=id,begriff,wortart,synonyme,bedeutung,beispielsatz&or=(' + teile.join(',') + ')&limit=80')
                 .then(function(d) {
                     d = d || [];
                     d.forEach(function(t) {
-                        t._rang = 5;
-                        var syn = (t.synonyme || '').toLowerCase().split(/\s*,\s*/);
+                        t._rang = 99;
+                        // Ein Synonym zählt als GANZES Wort («weit» trifft, «weiss» nicht).
+                        // Wie in der Wörterbuch-Suche zählen auch Synonyme, die mit dem Wort
+                        // BEGINNEN («weiter», «weitab») – aber schwächer gewichtet.
+                        var syns = (t.synonyme || '').toLowerCase().split(/\s*[,;]\s*/);
                         for (var i = 0; i < kand.length; i++) {
-                            if (syn.indexOf(kand[i]) >= 0) { t._rang = Math.min(t._rang, i === 0 ? 0 : 1); break; }
-                            if (syn.some(function(s) { return s.indexOf(kand[i]) === 0; })) t._rang = Math.min(t._rang, 2);
+                            for (var j = 0; j < syns.length; j++) {
+                                var s = syns[j];
+                                if (s === kand[i] || s.split(/\s+/)[0] === kand[i])   // auch «weit weg»
+                                    t._rang = Math.min(t._rang, i);
+                                else if (i < 2 && s.indexOf(kand[i]) === 0)           // beginnt damit
+                                    t._rang = Math.min(t._rang, 30 + i);
+                            }
                         }
-                        if ((t.begriff || '').toLowerCase() === wort.toLowerCase()) t._rang = Math.min(t._rang, 3);
+                        if ((t.begriff || '').toLowerCase() === lw) t._rang = 0;
                     });
-                    d = d.filter(function(t) { return t._rang < 5; });
+                    d = d.filter(function(t) { return t._rang < 99; });
                     d.sort(function(x, y) { return x._rang - y._rang; });
                     if (!d.length && !schonGrundform && kiBereit()) { uebWbGrundform(wort); return; }
                     state.uebWb = { wort: wort, treffer: d.slice(0, 12), laeuft: false, grundform: schonGrundform ? wort : null };
@@ -3629,15 +3676,22 @@
                 });
         }
 
-        // Zweite Stufe: die KI nennt die Grundform (schlich → schleichen), dann neue Suche
+        // Zweite Stufe: die KI bestimmt die Grundform AUS DEM SATZ (weite Grenze → weit,
+        // schlich → schleichen), dann wird mit der Grundform gesucht
         function uebWbGrundform(wort) {
             state.uebWb = { wort: wort, treffer: null, laeuft: true, sucheGrundform: true };
             uebWbBox();
-            kiFrage('Nenne AUSSCHLIESSLICH die Grundform des deutschen Wortes (Infinitiv bei Verben, Nominativ Einzahl bei Substantiven, ungebeugt bei Adjektiven). Nur das eine Wort, nichts sonst.',
-                    wort, 20, false)
+            var satz = state.uebWbSatz || '';
+            var sys = 'Bestimme die Grundform des markierten deutschen Wortes, wie es IM SATZ gebraucht wird: '
+                    + 'Infinitiv bei Verben, Nominativ Einzahl bei Substantiven, ungebeugte Form bei Adjektiven '
+                    + '(«weite Grenze» → weit, «schlich» → schleichen, «Häusern» → Haus). '
+                    + 'Antworte AUSSCHLIESSLICH mit diesem einen Wort.';
+            var user = 'WORT: ' + wort + (satz ? '\nSATZ: ' + satz : '');
+            kiFrage(sys, user, 20, false)
                 .then(function(a) {
                     var g = (a || '').trim().split(/\s/)[0].replace(/[^A-Za-zÄÖÜäöüß-]/g, '');
                     if (g && g.toLowerCase() !== wort.toLowerCase()) uebWbSuche(g, true);
+                    else if (g) uebWbSuche(g, true);
                     else { state.uebWb = { wort: wort, treffer: [], laeuft: false }; uebWbBox(); }
                 })
                 .catch(function() { state.uebWb = { wort: wort, treffer: [], laeuft: false }; uebWbBox(); });
@@ -3652,8 +3706,10 @@
                   + '<b>Im Wörterbuch zu «' + escHtml(s.wort) + '»</b>'
                   + (s.grundform ? ' <span class="wz-muted">(Grundform)</span>' : '')
                   + ' <button class="wz-mini grau" style="float:right;" onclick="state.uebWb=null;uebWbBox();">✕</button>';
-            if (s.laeuft) h += '<div class="wz-muted">' + (s.sucheGrundform ? 'bestimme die Grundform…' : 'suche…') + '</div>';
+            if (s.laeuft) h += '<div class="wz-muted">' + (s.sucheGrundform ? 'bestimme die Grundform aus dem Satz…' : 'suche…') + '</div>';
             else if (!s.treffer || !s.treffer.length) h += '<div class="wz-muted" style="margin-top:6px;">Nichts gefunden. Frag im Gespräch rechts nach anderen Wendungen – oder lass im Netz suchen.</div>';
+            if (!s.laeuft && !s.grundform && kiBereit())
+                h += '<div style="margin-top:8px;"><button class="wz-mini grau" onclick="uebWbGrundform(state.uebWb.wort)">🤖 Grundform aus dem Satz bestimmen und neu suchen</button></div>';
             else s.treffer.forEach(function(t) {
                 h += '<div style="margin-top:7px;border-top:1px solid var(--border-color);padding-top:6px;">'
                    + '<b>' + escHtml(t.begriff || '') + '</b>'
@@ -4006,7 +4062,7 @@
             h += '<button class="wz-mini grau" onclick="uebKonkordanzModal()">🔎 Konkordanz</button>';
             h += '<button class="wz-mini grau" onclick="uebExportModal()">📤 Export</button>';
             h += '<button class="wz-mini" onclick="uebSpeichern()" title="Beim ersten Mal wählst du die Datei (z. B. im Drive-Ordner), danach geht es immer dorthin.">💾 Speichern</button>';
-            h += '<span class="wz-muted" id="ueb-datei-name" style="font-size:11px;">' + escHtml(state.uebDateiName || '') + '</span>';
+            h += '<span class="wz-muted" id="ueb-datei-name" style="font-size:11px;">' + escHtml(state.uebDateiName || p.dateiname || 'noch keine Datei') + '</span>';
             h += '<button class="wz-mini grau" onclick="uebSchliessen()">✕</button>';
             h += '</div>';
 
@@ -4045,6 +4101,12 @@
             h += '<button class="btn" onclick="uebArbeit()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>✨ Arbeitsübersetzung + Erklärungen</button>';
             if (p.zielsprache === 'Mundart') h += '<span class="wz-muted">Doppelklick auf ein Wort → deine Mundartwörter dazu.</span>';
             h += '</div>';
+            if (p.zielsprache === 'Mundart') {
+                h += '<div class="wz-row" style="margin-top:8px;">'
+                   + '<input type="text" id="ueb-wb-eingabe" class="input" style="flex:1;" placeholder="Deutsche Entsprechung suchen (Grundform, z. B. «weit»)…" '
+                   + 'onkeypress="if(event.key===\'Enter\'){event.preventDefault();uebWbHand();}">'
+                   + '<button class="wz-mini" onclick="uebWbHand()">suchen</button></div>';
+            }
             h += '<div id="ueb-wb-box"></div></div>';
 
             // 3: Eigene Fassung + Chat
