@@ -3138,6 +3138,676 @@
             }).catch(function(e) { if (out) out.innerHTML = '<p style="color:#c62828;">Fehler: ' + escHtml(e.message) + '</p>'; });
         }
 
+        /* ═══════════ ÜBERSETZEN (Projekt-Werkstatt) ═══════════
+           Ein Projekt = eine JSON-Datei: Originaltext in Kapiteln und Absätzen,
+           je Absatz Arbeitsübersetzung, Erklärungen, eigene Fassung und Gespräch. */
+
+        var UEB_AUTOSAVE = 'mw-ueb-autosave';
+        var uebSpeicherTimer = null;
+
+        function uebP() { return state.uebProjekt || null; }
+        function uebKapObj() { var p = uebP(); return p ? p.kapitel[state.uebKap || 0] : null; }
+        function uebAbsObj() { var k = uebKapObj(); return k ? k.absaetze[state.uebAbs || 0] : null; }
+
+        /* ---- Text in Kapitel und Absätze teilen ---- */
+        function uebTextTeilen(text) {
+            var zeilen = String(text).replace(/\r\n?/g, '\n').split('\n');
+            var kapMuster = /^\s*(kapitel|chapter|chapitre|capitolo|akt|aufzug|szene|scene|buch|teil|prolog|epilog)\b/i;
+            var roemisch = /^\s*[IVXLCDM]+\.?\s*$/;
+            var kapitel = [], akt = null, puffer = [];
+            function neuesKap(titel) { akt = { titel: titel, uebersicht: '', absaetze: [] }; kapitel.push(akt); }
+            function pufferAb() {
+                var abs = puffer.join('\n').trim();
+                puffer = [];
+                if (!abs) return;
+                if (!akt) neuesKap('Text');
+                akt.absaetze.push({ orig: abs, arbeit: '', kommentar: '', eigene: '', status: 'offen', chat: [] });
+            }
+            zeilen.forEach(function(z) {
+                var t = z.trim();
+                if (kapMuster.test(t) || roemisch.test(t)) { pufferAb(); neuesKap(t); return; }
+                if (t === '') { pufferAb(); return; }
+                puffer.push(z);
+            });
+            pufferAb();
+            kapitel = kapitel.filter(function(k) { return k.absaetze.length; });
+            return kapitel.length ? kapitel : null;
+        }
+
+        /* ---- Anlegen, Speichern, Laden ---- */
+        function uebNeuModal() {
+            var spr = (typeof WK_SPRACHEN !== 'undefined' ? WK_SPRACHEN : ['Englisch','Französisch','Deutsch','Italienisch']);
+            var c = '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">Titel</label>'
+                  + '<input type="text" id="ueb-neu-titel" class="input" placeholder="z. B. Der letzte Mohikaner"></div>';
+            c += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+            c += '<div class="card-row" style="flex:1;"><label class="card-label" style="display:block;margin-bottom:4px;">Sprache des Originals</label><select id="ueb-neu-quelle" class="input">';
+            spr.forEach(function(s) { c += '<option' + (s === 'Englisch' ? ' selected' : '') + '>' + s + '</option>'; });
+            c += '</select></div>';
+            c += '<div class="card-row" style="flex:1;"><label class="card-label" style="display:block;margin-bottom:4px;">Zielsprache</label><select id="ueb-neu-ziel" class="input">'
+               + '<option>Mundart</option><option>Hochdeutsch</option></select></div></div>';
+            c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">Originaltext (ganzes Buch oder einzelne Szene)</label>'
+               + '<textarea id="ueb-neu-text" class="input" rows="8" placeholder="Text hier einfügen – oder unten eine .txt-Datei wählen"></textarea></div>';
+            c += '<div class="card-row"><input type="file" id="ueb-neu-datei" accept=".txt,text/plain" onchange="uebDateiInText(this)"></div>';
+            c += '<div style="margin-top:14px;display:flex;gap:10px;">'
+               + '<button class="btn" onclick="uebNeuAnlegen()">Projekt anlegen</button>'
+               + '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal()">Abbrechen</button></div>';
+            showModal('➕ Neues Übersetzungsprojekt', c);
+        }
+
+        function uebDateiInText(input) {
+            var f = input.files && input.files[0];
+            if (!f) return;
+            var r = new FileReader();
+            r.onload = function() {
+                var ta = document.getElementById('ueb-neu-text');
+                if (ta) ta.value = r.result;
+                showToast('Datei gelesen: ' + f.name, 'success');
+            };
+            r.readAsText(f);
+        }
+
+        function uebNeuAnlegen() {
+            var titel = (document.getElementById('ueb-neu-titel') || {}).value || 'Ohne Titel';
+            var text = (document.getElementById('ueb-neu-text') || {}).value || '';
+            if (!text.trim()) { showToast('Kein Text vorhanden', 'warning'); return; }
+            var kapitel = uebTextTeilen(text);
+            if (!kapitel) { showToast('Im Text liess sich nichts finden', 'error'); return; }
+            state.uebProjekt = {
+                format: 'mundart-uebersetzung', version: 1,
+                titel: titel.trim(),
+                quellsprache: (document.getElementById('ueb-neu-quelle') || {}).value || 'Englisch',
+                zielsprache: (document.getElementById('ueb-neu-ziel') || {}).value || 'Mundart',
+                angelegt: new Date().toISOString().slice(0, 10),
+                glossar: [], kapitel: kapitel
+            };
+            state.uebKap = 0; state.uebAbs = 0; state.uebWort = null; state.uebWb = null;
+            closeModal(); uebMerken(); render();
+            var nAbs = 0; kapitel.forEach(function(k) { nAbs += k.absaetze.length; });
+            showToast(kapitel.length + ' Kapitel, ' + nAbs + ' Absätze', 'success');
+        }
+
+        function uebSpeichern() {
+            var p = uebP();
+            if (!p) return;
+            p.geaendert = new Date().toISOString().slice(0, 10);
+            var name = (p.titel || 'projekt').replace(/[^\wäöüÄÖÜéèà -]/g, '').replace(/\s+/g, '_') + '.uebersetzung.json';
+            var blob = new Blob([JSON.stringify(p)], { type: 'application/json' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = name;
+            document.body.appendChild(a); a.click();
+            setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+            showToast('Gespeichert als ' + name + ' – leg die Datei z. B. in deinen Drive-Ordner', 'success');
+        }
+
+        function uebLadenDatei(input) {
+            var f = input.files && input.files[0];
+            if (!f) return;
+            var r = new FileReader();
+            r.onload = function() {
+                try {
+                    var p = JSON.parse(r.result);
+                    if (p.format !== 'mundart-uebersetzung' || !p.kapitel) throw new Error('Das ist keine Projektdatei');
+                    p.kapitel.forEach(function(k) { k.absaetze.forEach(function(a) { if (!a.chat) a.chat = []; }); });
+                    state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0;
+                    // Beim zuletzt offenen Absatz weitermachen
+                    for (var i = 0; i < p.kapitel.length; i++) {
+                        for (var j = 0; j < p.kapitel[i].absaetze.length; j++) {
+                            if (p.kapitel[i].absaetze[j].status !== 'fertig') { state.uebKap = i; state.uebAbs = j; i = p.kapitel.length; break; }
+                        }
+                    }
+                    state.uebWort = null; state.uebWb = null;
+                    uebMerken(); render();
+                    showToast('«' + (p.titel || '') + '» geladen', 'success');
+                } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
+            };
+            r.readAsText(f);
+        }
+
+        function uebMerken() {
+            if (uebSpeicherTimer) clearTimeout(uebSpeicherTimer);
+            uebSpeicherTimer = setTimeout(function() {
+                try { localStorage.setItem(UEB_AUTOSAVE, JSON.stringify(state.uebProjekt)); }
+                catch (e) {
+                    // Zu gross für den Browser-Speicher (kann bei ganzen Romanen passieren)
+                    if (!state.uebSpeicherWarnung) {
+                        state.uebSpeicherWarnung = true;
+                        showToast('Projekt zu gross für die Zwischensicherung – bitte regelmässig über 💾 als Datei speichern', 'warning');
+                    }
+                }
+            }, 1500);
+        }
+
+        function uebZwischenstand() {
+            try {
+                var s = localStorage.getItem(UEB_AUTOSAVE);
+                if (!s) return null;
+                var p = JSON.parse(s);
+                return (p && p.format === 'mundart-uebersetzung') ? p : null;
+            } catch (e) { return null; }
+        }
+
+        function uebZwischenstandLaden() {
+            var p = uebZwischenstand();
+            if (!p) { showToast('Kein Zwischenstand vorhanden', 'warning'); return; }
+            state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0; render();
+            showToast('Zwischenstand wiederhergestellt – bitte gelegentlich als Datei speichern', 'success');
+        }
+
+        function uebSchliessen() {
+            if (!confirm('Projekt schliessen? Nicht als Datei Gespeichertes bleibt nur im Browser-Zwischenstand.')) return;
+            state.uebProjekt = null; render();
+        }
+
+        /* ---- Felder und Navigation ---- */
+        function uebFeld(name, wert) {
+            var a = uebAbsObj();
+            if (!a) return;
+            a[name] = wert;
+            if (name === 'eigene') uebGlossarHinweisNeu();
+            uebMerken();
+        }
+
+        function uebGehe(kap, abs) {
+            var p = uebP();
+            if (!p) return;
+            kap = Math.max(0, Math.min(kap, p.kapitel.length - 1));
+            abs = Math.max(0, Math.min(abs, p.kapitel[kap].absaetze.length - 1));
+            state.uebKap = kap; state.uebAbs = abs;
+            state.uebWort = null; state.uebWb = null;
+            render();
+        }
+
+        function uebWeiter(richtung) {
+            var p = uebP(); if (!p) return;
+            var k = state.uebKap || 0, a = (state.uebAbs || 0) + richtung;
+            if (a < 0) { if (k > 0) { k--; a = p.kapitel[k].absaetze.length - 1; } else a = 0; }
+            if (a >= p.kapitel[k].absaetze.length) { if (k < p.kapitel.length - 1) { k++; a = 0; } else a = p.kapitel[k].absaetze.length - 1; }
+            uebGehe(k, a);
+        }
+
+        function uebFertig() {
+            var a = uebAbsObj(); if (!a) return;
+            a.status = a.status === 'fertig' ? 'offen' : 'fertig';
+            uebMerken(); render();
+        }
+
+        /* ---- Etappe 2: Verstehen ---- */
+        function uebArbeit() {
+            var p = uebP(), a = uebAbsObj();
+            if (!a) return;
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            if (a.arbeit && !confirm('Die bestehende Arbeitsübersetzung überschreiben?')) return;
+            showToast('Übersetze...', 'warning');
+            var k = uebKapObj();
+            var vorher = (state.uebAbs > 0) ? k.absaetze[state.uebAbs - 1].orig.slice(-400) : '';
+            var sys = 'Du bist literarischer Übersetzer und Lektor. Quellsprache: ' + p.quellsprache + '.\n\n'
+              + 'AUFGABE 1 – ARBEITSÜBERSETZUNG: Übersetze den Abschnitt in präzises SCHWEIZER Hochdeutsch (nie ß, immer ss; Anführungszeichen «»). '
+              + 'So genau und satztreu wie möglich: nichts glätten, nichts weglassen, nichts dazu erfinden. Holprigkeit ist erlaubt, Genauigkeit geht vor Schönheit.\n\n'
+              + 'AUFGABE 2 – ERKLÄRUNGEN: Nenne knapp, was man leicht überliest oder ohne Hintergrund falsch versteht: '
+              + 'veraltete Wörter mit verschobener Bedeutung, Realien (Ämter, Münzen, Masse, Anreden, Rechts- und Kriegsbräuche), '
+              + 'Anspielungen und Zitate, Ironie und doppelte Böden, das Register der Sprechenden. '
+              + 'NUR wirklich Erklärungsbedürftiges, keine Nacherzählung. Je Punkt eine Zeile «Stichwort: Erklärung». Wenn nichts: leer.\n\n'
+              + 'Antworte AUSSCHLIESSLICH mit JSON: {"uebersetzung":"...","erklaerungen":"..."}';
+            var user = (vorher ? 'KONTEXT (Ende des vorigen Absatzes):\n…' + vorher + '\n\n' : '') + 'ABSCHNITT:\n' + a.orig;
+            kiFrage(sys, user, 3500, false).then(function(antw) {
+                var o = kiJson(antw);
+                if (!o || !o.uebersetzung) { showToast('Antwort nicht lesbar', 'error'); return; }
+                a.arbeit = String(o.uebersetzung);
+                if (o.erklaerungen && String(o.erklaerungen).trim()) a.kommentar = String(o.erklaerungen).trim();
+                uebMerken(); render();
+                showToast('✓ Arbeitsübersetzung erstellt', 'success');
+            }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        function uebWortKlick(el) {
+            var wort = (el.textContent || '').trim();
+            var a = uebAbsObj();
+            if (!wort || !a) return;
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            // Satz mit dem Wort herausschneiden
+            var saetze = a.orig.split(/(?<=[.!?;])\s+/), satz = '';
+            for (var i = 0; i < saetze.length; i++) if (saetze[i].indexOf(wort) >= 0) { satz = saetze[i]; break; }
+            state.uebWort = { wort: wort, text: '', laeuft: true };
+            uebWortBox();
+            var p = uebP();
+            var sys = 'Du erklärst einem Übersetzer einzelne Wörter. Quellsprache: ' + p.quellsprache + '. '
+              + 'Gib zum vorgelegten Wort IN DIESEM SATZ: 1. die genaue Bedeutung hier (ein Satz), '
+              + '2. die Bedeutungsbreite des Wortes (kurz), 3. wenn das Wort veraltet ist oder sich die Bedeutung verschoben hat, einen Hinweis darauf. '
+              + 'Schweizer Hochdeutsch (nie ß). Knapp, ohne Vorrede, keine Aufzählungszeichen.';
+            var user = 'WORT: ' + wort + '\nSATZ: ' + (satz || a.orig.slice(0, 400));
+            kiFrage(sys, user, 400, false).then(function(antw) {
+                state.uebWort = { wort: wort, text: antw, laeuft: false };
+                uebWortBox();
+            }).catch(function(e) {
+                state.uebWort = { wort: wort, text: '⚠️ ' + e.message, laeuft: false };
+                uebWortBox();
+            });
+        }
+
+        function uebWortBox() {
+            var box = document.getElementById('ueb-wort-box');
+            if (!box) return;
+            var w = state.uebWort;
+            if (!w) { box.innerHTML = ''; return; }
+            box.innerHTML = '<div style="border:1px solid var(--border-color);background:var(--bg-tertiary);border-radius:8px;padding:10px;margin-top:8px;font-size:13px;">'
+                + '<b>' + escHtml(w.wort) + '</b> '
+                + '<button class="wz-mini grau" style="float:right;" onclick="state.uebWort=null;uebWortBox();">✕</button><br>'
+                + (w.laeuft ? '<span class="wz-muted">wird nachgeschlagen…</span>' : kiMarkdown(w.text)) + '</div>';
+        }
+
+        function uebUebersicht() {
+            var p = uebP(), k = uebKapObj();
+            if (!k) return;
+            if (k.uebersicht) {
+                showModal('📚 ' + escHtml(k.titel), '<div style="line-height:1.6;">' + kiMarkdown(k.uebersicht) + '</div>'
+                    + '<div style="margin-top:12px;"><button class="btn" onclick="uebUebersichtNeu()">Neu erstellen</button></div>');
+                return;
+            }
+            uebUebersichtNeu();
+        }
+
+        function uebUebersichtNeu() {
+            var p = uebP(), k = uebKapObj();
+            if (!k) return;
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            closeModal();
+            showToast('Erstelle Übersicht...', 'warning');
+            var text = k.absaetze.map(function(a) { return a.orig; }).join('\n\n');
+            if (text.length > 16000) text = text.slice(0, 16000) + '\n[…gekürzt…]';
+            var sys = 'Du hilfst einem literarischen Übersetzer, sich in einem Kapitel zu orientieren. Quellsprache: ' + p.quellsprache + '. '
+              + 'Fasse in Schweizer Hochdeutsch (nie ß) knapp zusammen: Was passiert? Wer tritt auf, in welchem Verhältnis? '
+              + 'Worauf läuft das Kapitel zu? Gibt es Ton- oder Registerwechsel? Fliesstext, höchstens 200 Wörter.';
+            kiFrage(sys, text, 900, false).then(function(antw) {
+                k.uebersicht = antw; uebMerken();
+                showModal('📚 ' + escHtml(k.titel), '<div style="line-height:1.6;">' + kiMarkdown(antw) + '</div>');
+            }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        /* ---- Etappe 3: Übersetzen ---- */
+
+        // Doppelklick in der Arbeitsübersetzung → Mundartwörter aus den Synonymen
+        function uebDoppelklick(ta) {
+            var p = uebP();
+            if (!p || p.zielsprache !== 'Mundart') return;
+            var wort = '';
+            if (ta.selectionStart != null) {
+                wort = ta.value.slice(ta.selectionStart, ta.selectionEnd).trim();
+            }
+            wort = wort.replace(/[^A-Za-zÄÖÜäöüßéèà-]/g, '');
+            if (wort.length < 3) return;
+            uebWbSuche(wort);
+        }
+
+        function uebWbSuche(wort) {
+            state.uebWb = { wort: wort, treffer: null, laeuft: true };
+            uebWbBox();
+            var q = encodeURIComponent('*' + wort + '*');
+            supabaseCall('woerter?select=id,begriff,wortart,synonyme,bedeutung,beispielsatz&or=(synonyme.ilike.' + q + ',begriff.ilike.' + q + ')&limit=40')
+                .then(function(d) {
+                    d = d || [];
+                    var lw = wort.toLowerCase();
+                    d.forEach(function(t) {
+                        t._rang = 3;
+                        var syn = (t.synonyme || '').toLowerCase().split(/\s*,\s*/);
+                        if (syn.indexOf(lw) >= 0) t._rang = 0;                    // exakt als Synonym
+                        else if (syn.some(function(s) { return s.indexOf(lw) === 0; })) t._rang = 1;
+                        else if ((t.begriff || '').toLowerCase() === lw) t._rang = 2;
+                    });
+                    d.sort(function(x, y) { return x._rang - y._rang; });
+                    state.uebWb = { wort: wort, treffer: d.slice(0, 12), laeuft: false };
+                    uebWbBox();
+                }).catch(function() {
+                    state.uebWb = { wort: wort, treffer: [], laeuft: false };
+                    uebWbBox();
+                });
+        }
+
+        function uebWbBox() {
+            var box = document.getElementById('ueb-wb-box');
+            if (!box) return;
+            var s = state.uebWb;
+            if (!s) { box.innerHTML = ''; return; }
+            var h = '<div style="border:1px solid var(--border-color);background:var(--bg-tertiary);border-radius:8px;padding:10px;margin-top:8px;font-size:13px;">'
+                  + '<b>Im Wörterbuch zu «' + escHtml(s.wort) + '»</b> '
+                  + '<button class="wz-mini grau" style="float:right;" onclick="state.uebWb=null;uebWbBox();">✕</button>';
+            if (s.laeuft) h += '<div class="wz-muted">suche…</div>';
+            else if (!s.treffer || !s.treffer.length) h += '<div class="wz-muted" style="margin-top:6px;">Nichts gefunden. Frag im Gespräch rechts nach anderen Wendungen – oder lass im Netz suchen.</div>';
+            else s.treffer.forEach(function(t) {
+                h += '<div style="margin-top:7px;border-top:1px solid var(--border-color);padding-top:6px;">'
+                   + '<b>' + escHtml(t.begriff || '') + '</b>'
+                   + (t.wortart ? ' <span class="wz-muted">(' + escHtml(t.wortart) + ')</span>' : '')
+                   + (t.bedeutung ? '<br><span class="wz-muted">' + escHtml(String(t.bedeutung).slice(0, 90)) + '</span>' : '')
+                   + (t.beispielsatz ? '<br><i>' + escHtml(String(t.beispielsatz).slice(0, 110)) + '</i>' : '')
+                   + '</div>';
+            });
+            h += '</div>';
+            box.innerHTML = h;
+        }
+
+        // Gespräch am Absatz
+        function uebChatSenden() {
+            var p = uebP(), a = uebAbsObj();
+            if (!a) return;
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            var el = document.getElementById('ueb-chat-eingabe');
+            var frage = el ? el.value.trim() : '';
+            if (!frage) return;
+            if (el) el.value = '';
+            a.chat.push({ role: 'user', content: frage });
+            state.uebChatLaeuft = true;
+            uebChatBox();
+
+            var sys;
+            if (p.zielsprache === 'Mundart') {
+                sys = kiRegelPrompt() + '\n\n'
+                  + 'ROLLE: Du begleitest einen erfahrenen Mundart-Übersetzer bei SEINER Übersetzung. Er formuliert, du hilfst.\n'
+                  + 'GRUNDSATZ: Mundart ist gesprochene Sprache – kurze Sätze, Verben statt Substantivierungen, gesprochene Wortstellung. '
+                  + 'Verdichten ist erlaubt, aber zeig an, wo du straffst. Denk in Bedeutungen, nicht Wort für Wort. '
+                  + 'Wenn er fragt, ob der Inhalt noch stimmt, vergleiche seine Fassung gegen Original und Arbeitsübersetzung und benenne Abweichungen ehrlich. '
+                  + 'Mach konkrete Vorschläge, gern zwei bis drei Varianten. Knapp, Fliesstext, ohne Vorrede.';
+            } else {
+                sys = 'ROLLE: Du begleitest einen literarischen Übersetzer bei seiner Übersetzung in SCHWEIZER Hochdeutsch (nie ß, immer ss; «Guillemets»). '
+                  + 'Für die Bühne heisst das: sprechbar, atembar, kurze Bögen. '
+                  + 'Wenn er fragt, ob der Inhalt noch stimmt, vergleiche gegen Original und Arbeitsübersetzung und benenne Abweichungen ehrlich. '
+                  + 'Mach konkrete Vorschläge, gern zwei bis drei Varianten. Knapp, Fliesstext, ohne Vorrede.';
+            }
+            var glossarText = (p.glossar || []).map(function(g) { return g.von + ' = ' + g.zu; }).join('; ');
+            var kontext = 'ORIGINAL (' + p.quellsprache + '):\n' + a.orig
+                + '\n\nARBEITSÜBERSETZUNG:\n' + (a.arbeit || '—')
+                + '\n\nSEINE AKTUELLE FASSUNG:\n' + (a.eigene || '— (noch leer)')
+                + (glossarText ? '\n\nGLOSSAR (feste Übersetzungen): ' + glossarText : '');
+            var msgs = a.chat.slice(-8).map(function(m) { return { role: m.role, content: m.content }; });
+            msgs[msgs.length - 1] = { role: 'user', content: kontext + '\n\n---\nFRAGE:\n' + frage };
+
+            kiFrageVerlauf(sys, msgs, 1800, true).then(function(antw) {
+                a.chat.push({ role: 'assistant', content: antw || '(keine Antwort)' });
+                state.uebChatLaeuft = false; uebMerken(); uebChatBox();
+            }).catch(function(e) {
+                a.chat.push({ role: 'assistant', content: '⚠️ ' + e.message });
+                state.uebChatLaeuft = false; uebChatBox();
+            });
+        }
+
+        function uebChatBox() {
+            var box = document.getElementById('ueb-chat-log');
+            if (!box) return;
+            var a = uebAbsObj();
+            var v = (a && a.chat) || [];
+            var h = '';
+            if (!v.length) h = '<div class="wz-muted">Frag hier: «Stimmt der Inhalt noch?», «Geht das kürzer?», «Andere Wendung für …?»</div>';
+            v.slice(-12).forEach(function(m) {
+                var ich = m.role === 'user';
+                h += '<div style="margin-bottom:8px;padding:7px 10px;border-radius:8px;font-size:13px;'
+                   + (ich ? 'background:var(--bg-tertiary);' : 'background:var(--bg-secondary);border:1px solid var(--border-color);')
+                   + '"><b style="color:var(--accent-color);">' + (ich ? 'Du' : 'KI') + '</b><br>' + kiMarkdown(m.content) + '</div>';
+            });
+            if (state.uebChatLaeuft) h += '<div class="wz-muted">KI denkt nach…</div>';
+            box.innerHTML = h;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function uebChatLeeren() {
+            var a = uebAbsObj();
+            if (a) { a.chat = []; uebMerken(); uebChatBox(); }
+        }
+
+        /* ---- Glossar ---- */
+        function uebGlossarModal() {
+            var p = uebP(); if (!p) return;
+            var zeilen = (p.glossar || []).map(function(g) { return g.von + ' = ' + g.zu; }).join('\n');
+            var c = '<p class="wz-muted" style="margin-bottom:8px;">Eine Zeile je Eintrag: <code>Original = Übersetzung</code>. '
+                  + 'Namen, wiederkehrende Begriffe, Anreden. Die App mahnt, wenn deine Fassung davon abweicht.</p>'
+                  + '<textarea id="ueb-glossar-ta" class="input" rows="10" placeholder="wilderness = Wildnis&#10;Hawkeye = Falkenaug">' + escHtml(zeilen) + '</textarea>'
+                  + '<div style="margin-top:12px;display:flex;gap:10px;">'
+                  + '<button class="btn" onclick="uebGlossarSpeichern()">Speichern</button>'
+                  + '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal()">Abbrechen</button></div>';
+            showModal('📇 Glossar', c);
+        }
+
+        function uebGlossarSpeichern() {
+            var p = uebP(); if (!p) return;
+            var ta = document.getElementById('ueb-glossar-ta');
+            var g = [];
+            (ta ? ta.value : '').split('\n').forEach(function(z) {
+                var m = z.split('=');
+                if (m.length >= 2) {
+                    var von = m[0].trim(), zu = m.slice(1).join('=').trim();
+                    if (von && zu) g.push({ von: von, zu: zu });
+                }
+            });
+            p.glossar = g;
+            uebMerken(); closeModal(); uebGlossarHinweisNeu();
+            showToast(g.length + ' Glossareinträge', 'success');
+        }
+
+        function uebGlossarHinweise() {
+            var p = uebP(), a = uebAbsObj();
+            if (!p || !a || !(p.glossar || []).length) return [];
+            var funde = [];
+            var lo = a.orig.toLowerCase(), le = (a.eigene || '').toLowerCase();
+            if (!le.trim()) return [];
+            p.glossar.forEach(function(g) {
+                if (lo.indexOf(g.von.toLowerCase()) >= 0 && le.indexOf(g.zu.toLowerCase()) < 0)
+                    funde.push(g);
+            });
+            return funde;
+        }
+
+        function uebGlossarHinweisNeu() {
+            var box = document.getElementById('ueb-glossar-hinweis');
+            if (!box) return;
+            var funde = uebGlossarHinweise();
+            box.innerHTML = funde.length
+                ? '<div style="margin-top:6px;font-size:12px;color:#b45309;">📇 Laut Glossar erwartet: '
+                  + funde.map(function(g) { return escHtml(g.von) + ' → <b>' + escHtml(g.zu) + '</b>'; }).join(' · ') + '</div>'
+                : '';
+        }
+
+        /* ---- Etappe 4: Konkordanz und Export ---- */
+        function uebKonkordanzModal() {
+            var c = '<div class="wz-row"><input type="text" id="ueb-konk-eingabe" class="input" style="flex:1;" placeholder="Wort oder Wendung – Original oder Übersetzung" '
+                  + 'onkeypress="if(event.key===\'Enter\')uebKonkordanz()">'
+                  + '<button class="btn" onclick="uebKonkordanz()">Suchen</button></div>'
+                  + '<div id="ueb-konk-out" style="margin-top:10px;max-height:420px;overflow:auto;"></div>';
+            showModal('🔎 Wie habe ich das bisher übersetzt?', c);
+            setTimeout(function() { var el = document.getElementById('ueb-konk-eingabe'); if (el) el.focus(); }, 100);
+        }
+
+        function uebKonkordanz() {
+            var p = uebP(); if (!p) return;
+            var el = document.getElementById('ueb-konk-eingabe');
+            var s = (el ? el.value : '').trim().toLowerCase();
+            var out = document.getElementById('ueb-konk-out');
+            if (!s || s.length < 2 || !out) return;
+            var h = '', n = 0;
+            p.kapitel.forEach(function(k, ki) {
+                k.absaetze.forEach(function(a, ai) {
+                    var imOrig = a.orig.toLowerCase().indexOf(s) >= 0;
+                    var imEigen = (a.eigene || '').toLowerCase().indexOf(s) >= 0;
+                    if (!imOrig && !imEigen) return;
+                    if (++n > 30) return;
+                    function schnipsel(t) {
+                        var i = t.toLowerCase().indexOf(s);
+                        if (i < 0) return '';
+                        var von = Math.max(0, i - 60);
+                        return (von > 0 ? '…' : '') + escHtml(t.slice(von, i)) + '<mark>' + escHtml(t.slice(i, i + s.length)) + '</mark>' + escHtml(t.slice(i + s.length, i + s.length + 60)) + '…';
+                    }
+                    h += '<div style="border-top:1px solid var(--border-color);padding:8px 0;font-size:13px;">'
+                       + '<a href="#" onclick="closeModal();uebGehe(' + ki + ',' + ai + ');return false;" style="color:var(--accent-color);">' + escHtml(k.titel) + ', Absatz ' + (ai + 1) + '</a><br>'
+                       + (imOrig ? '<span class="wz-muted">Original:</span> ' + schnipsel(a.orig) + '<br>' : '')
+                       + (imEigen ? '<span class="wz-muted">Deine Fassung:</span> ' + schnipsel(a.eigene) : '')
+                       + '</div>';
+                });
+            });
+            out.innerHTML = h || '<div class="wz-muted">Nichts gefunden.</div>';
+        }
+
+        function uebExportModal() {
+            var p = uebP(); if (!p) return;
+            var nF = 0, nA = 0;
+            p.kapitel.forEach(function(k) { k.absaetze.forEach(function(a) { nA++; if ((a.eigene || '').trim()) nF++; }); });
+            var c = '<p class="wz-muted">' + nF + ' von ' + nA + ' Absätzen haben eine eigene Fassung.</p>'
+                  + '<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">'
+                  + '<button class="btn" onclick="uebSprechfassung()">🗣️ Sprechfassung öffnen (zum Drucken)</button>'
+                  + '<button class="btn" onclick="uebTextExport()">⬇️ Übersetzung als Textdatei</button>'
+                  + '<button class="btn" onclick="uebZurPruefung()">🔍 Zur Schreibweise-Prüfung schicken</button>'
+                  + '</div>';
+            showModal('📤 Export', c);
+        }
+
+        function uebGanzerText() {
+            var p = uebP(), teile = [];
+            p.kapitel.forEach(function(k) {
+                var abs = k.absaetze.filter(function(a) { return (a.eigene || '').trim(); }).map(function(a) { return a.eigene.trim(); });
+                if (abs.length) teile.push((p.kapitel.length > 1 ? k.titel + '\n\n' : '') + abs.join('\n\n'));
+            });
+            return teile.join('\n\n\n');
+        }
+
+        function uebSprechfassung() {
+            var p = uebP();
+            var w = window.open('', '_blank');
+            if (!w) { showToast('Popup blockiert', 'error'); return; }
+            var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + escHtml(p.titel) + ' – Sprechfassung</title>'
+                + '<style>body{font-family:Georgia,serif;font-size:16pt;line-height:1.7;max-width:44em;margin:2em auto;padding:0 1em;}h2{font-size:14pt;margin-top:2em;color:#555;}p{margin:0 0 .8em;}</style></head><body>'
+                + '<h1 style="font-size:16pt;">' + escHtml(p.titel) + '</h1>';
+            p.kapitel.forEach(function(k) {
+                var abs = k.absaetze.filter(function(a) { return (a.eigene || '').trim(); });
+                if (!abs.length) return;
+                if (p.kapitel.length > 1) html += '<h2>' + escHtml(k.titel) + '</h2>';
+                abs.forEach(function(a) { html += '<p>' + escHtml(a.eigene.trim()).replace(/\n/g, '<br>') + '</p>'; });
+            });
+            html += '</body></html>';
+            w.document.write(html); w.document.close();
+        }
+
+        function uebTextExport() {
+            var p = uebP();
+            var blob = new Blob([p.titel + '\n\n' + uebGanzerText()], { type: 'text/plain;charset=utf-8' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = (p.titel || 'uebersetzung').replace(/[^\wäöüÄÖÜ -]/g, '').replace(/\s+/g, '_') + '.txt';
+            document.body.appendChild(a); a.click();
+            setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+        }
+
+        function uebZurPruefung() {
+            state.pruefText = uebGanzerText();
+            state.pruefErgebnis = null;
+            closeModal();
+            state.adminTab = 'pruefen';
+            render();
+            showToast('Text übergeben – jetzt «Prüfen» drücken', 'success');
+        }
+
+        /* ---- Ansicht ---- */
+        function uebOrigHtml(text) {
+            var h = '';
+            String(text).split(/([A-Za-zÀ-ÿĀ-ž'’-]+)/).forEach(function(t) {
+                if (/^[A-Za-zÀ-ÿĀ-ž'’-]+$/.test(t) && t.length > 1)
+                    h += '<span class="ueb-w" onclick="uebWortKlick(this)">' + escHtml(t) + '</span>';
+                else h += escHtml(t);
+            });
+            return h.replace(/\n/g, '<br>');
+        }
+
+        function renderUebersetzen() {
+            var p = uebP();
+            var h = '<style>.ueb-w{cursor:pointer;border-radius:3px;}.ueb-w:hover{background:var(--bg-tertiary);text-decoration:underline;}'
+                  + '.ueb-ta{width:100%;min-height:180px;resize:vertical;font-size:14px;line-height:1.55;}</style>';
+            h += '<div class="wz-wrap">';
+
+            if (!p) {
+                var zs = uebZwischenstand();
+                h += '<div class="wz-box"><h3>📖 Übersetzen</h3>';
+                h += '<p class="wz-muted" style="margin-bottom:12px;">Ein Projekt ist eine einzelne Datei – Originaltext, Arbeitsübersetzung, '
+                   + 'Erklärungen und deine Fassung. Du speicherst sie bei dir (z. B. im Drive-Ordner) und lädst sie auf jedem Gerät wieder.</p>';
+                h += '<div class="wz-row">';
+                h += '<button class="btn" onclick="uebNeuModal()">➕ Neues Projekt</button>';
+                h += '<label class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);cursor:pointer;">📂 Projektdatei laden'
+                   + '<input type="file" accept=".json,application/json" style="display:none;" onchange="uebLadenDatei(this)"></label>';
+                if (zs) h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebZwischenstandLaden()">↩ Zwischenstand: «' + escHtml(zs.titel || '') + '»</button>';
+                h += '</div></div></div>';
+                return h;
+            }
+
+            state.uebKap = state.uebKap || 0; state.uebAbs = state.uebAbs || 0;
+            if (state.uebKap >= p.kapitel.length) state.uebKap = 0;
+            if (state.uebAbs >= p.kapitel[state.uebKap].absaetze.length) state.uebAbs = 0;
+            var k = uebKapObj(), a = uebAbsObj();
+            var nAbs = k.absaetze.length;
+            var fertigKap = k.absaetze.filter(function(x) { return x.status === 'fertig'; }).length;
+
+            // Kopfzeile
+            h += '<div class="wz-box"><div class="wz-row" style="align-items:center;">';
+            h += '<b style="font-size:15px;">' + escHtml(p.titel) + '</b>';
+            h += '<span class="wz-muted">' + escHtml(p.quellsprache) + ' → ' + escHtml(p.zielsprache) + '</span>';
+            h += '<span style="flex:1;"></span>';
+            h += '<button class="wz-mini grau" onclick="uebUebersicht()">📚 Kapitelübersicht</button>';
+            h += '<button class="wz-mini grau" onclick="uebGlossarModal()">📇 Glossar</button>';
+            h += '<button class="wz-mini grau" onclick="uebKonkordanzModal()">🔎 Konkordanz</button>';
+            h += '<button class="wz-mini grau" onclick="uebExportModal()">📤 Export</button>';
+            h += '<button class="wz-mini" onclick="uebSpeichern()">💾 Speichern</button>';
+            h += '<button class="wz-mini grau" onclick="uebSchliessen()">✕</button>';
+            h += '</div>';
+
+            // Navigation
+            h += '<div class="wz-row" style="margin-top:10px;align-items:center;">';
+            if (p.kapitel.length > 1) {
+                h += '<select class="input" style="width:auto;" onchange="uebGehe(parseInt(this.value),0)">';
+                p.kapitel.forEach(function(kk, i) {
+                    h += '<option value="' + i + '"' + (i === state.uebKap ? ' selected' : '') + '>' + escHtml(kk.titel) + '</option>';
+                });
+                h += '</select>';
+            }
+            h += '<button class="wz-mini grau" onclick="uebWeiter(-1)">← zurück</button>';
+            h += '<span>Absatz <b>' + (state.uebAbs + 1) + '</b> / ' + nAbs + '</span>';
+            h += '<button class="wz-mini" onclick="uebWeiter(1)">nächster Absatz →</button>';
+            h += '<button class="wz-mini ' + (a.status === 'fertig' ? '' : 'grau') + '" onclick="uebFertig()">' + (a.status === 'fertig' ? '✓ fertig' : 'als fertig markieren') + '</button>';
+            h += '<span class="wz-muted">' + fertigKap + '/' + nAbs + ' fertig in diesem Kapitel</span>';
+            h += '</div></div>';
+
+            // Drei Spalten
+            h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;align-items:start;">';
+
+            // 1: Original + Erklärungen
+            h += '<div class="wz-box"><h3>Original <span class="wz-muted" style="font-weight:normal;">(Wort anklicken zum Nachschlagen)</span></h3>';
+            h += '<div style="line-height:1.6;font-size:14px;">' + uebOrigHtml(a.orig) + '</div>';
+            h += '<div id="ueb-wort-box"></div>';
+            h += '<h3 style="margin-top:14px;">Erklärungen</h3>';
+            h += '<textarea class="input ueb-ta" style="min-height:110px;" placeholder="Historisches, Kulturelles, doppelte Böden – kommt mit der Arbeitsübersetzung, du kannst ergänzen." '
+               + 'oninput="uebFeld(\'kommentar\',this.value)">' + escHtml(a.kommentar || '') + '</textarea></div>';
+
+            // 2: Arbeitsübersetzung
+            h += '<div class="wz-box"><h3>Arbeitsübersetzung <span class="wz-muted" style="font-weight:normal;">(präzis, redigierbar)</span></h3>';
+            h += '<textarea class="input ueb-ta" id="ueb-arbeit" placeholder="Genaue hochdeutsche Übersetzung – Knopf drücken oder selber schreiben." '
+               + 'oninput="uebFeld(\'arbeit\',this.value)" ondblclick="uebDoppelklick(this)">' + escHtml(a.arbeit || '') + '</textarea>';
+            h += '<div class="wz-row" style="margin-top:8px;">';
+            h += '<button class="btn" onclick="uebArbeit()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>✨ Arbeitsübersetzung + Erklärungen</button>';
+            if (p.zielsprache === 'Mundart') h += '<span class="wz-muted">Doppelklick auf ein Wort → deine Mundartwörter dazu.</span>';
+            h += '</div>';
+            h += '<div id="ueb-wb-box"></div></div>';
+
+            // 3: Eigene Fassung + Chat
+            h += '<div class="wz-box"><h3>Deine Fassung <span class="wz-muted" style="font-weight:normal;">(' + escHtml(p.zielsprache) + ')</span></h3>';
+            h += '<textarea class="input ueb-ta" id="ueb-eigene" placeholder="Hier übersetzt du. Revidiere, bis es sitzt – unten kannst du die KI dazu befragen." '
+               + 'oninput="uebFeld(\'eigene\',this.value)">' + escHtml(a.eigene || '') + '</textarea>';
+            h += '<div id="ueb-glossar-hinweis"></div>';
+            h += '<div id="ueb-chat-log" style="max-height:260px;overflow:auto;margin-top:10px;"></div>';
+            h += '<div class="wz-row" style="margin-top:8px;">';
+            h += '<textarea id="ueb-chat-eingabe" class="input" rows="2" style="flex:1;" placeholder="z. B. «Stimmt der Inhalt noch?» oder «mach us em Schachtelsatz zwee Sätz»" '
+               + 'onkeypress="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();uebChatSenden();}"></textarea>';
+            h += '<button class="btn" onclick="uebChatSenden()"' + (kiBereit() ? '' : ' disabled') + '>Senden</button>';
+            h += '</div>';
+            h += '<div class="wz-row" style="margin-top:4px;"><button class="wz-mini grau" onclick="uebChatLeeren()">Gespräch löschen</button></div>';
+            h += '</div>';
+
+            h += '</div></div>';
+            setTimeout(function() { uebChatBox(); uebGlossarHinweisNeu(); }, 0);
+            return h;
+        }
+
+
         // Admin
         function renderAdmin() {
             var pendingCount = state.pendingChanges.length;
@@ -3147,6 +3817,7 @@
             tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'ki' ? ' active' : '') + '" onclick="changeAdminTab(\'ki\')">🤖 KI</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'werkstatt' ? ' active' : '') + '" onclick="changeAdminTab(\'werkstatt\')">🔧 Werkstatt</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'uebersetzen' ? ' active' : '') + '" onclick="changeAdminTab(\'uebersetzen\')">📖 Übersetzen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
             tabs += '<button class="tab-btn" onclick="handleLogout()" style="margin-left:auto;">🔒 Abmelden</button>';
             tabs += '</div>';
@@ -3155,6 +3826,7 @@
             if (state.adminTab === 'pruefen') return tabs + renderPruefen();
             if (state.adminTab === 'ki') return tabs + renderKI();
             if (state.adminTab === 'werkstatt') return tabs + renderWerkstatt();
+            if (state.adminTab === 'uebersetzen') return tabs + renderUebersetzen();
             return tabs + renderExportTab();
         }
         
