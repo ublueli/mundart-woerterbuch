@@ -3446,10 +3446,23 @@
         }
 
         /* ---- Felder und Navigation ---- */
+
+        // Felder wachsen mit dem Inhalt – kein Scrollen, kein Zurückspringen
+        function uebAuto(el) {
+            if (!el) return;
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight + 4, 1200) + 'px';
+        }
+        function uebAutoAlle() {
+            var alle = document.querySelectorAll('.ueb-ta');
+            for (var i = 0; i < alle.length; i++) uebAuto(alle[i]);
+        }
+
         function uebFeld(name, wert) {
             var a = uebAbsObj();
             if (!a) return;
             a[name] = wert;
+            if (name === 'arbeit') a.arbeitSaetze = null;   // Handarbeit am Ganzen löst die Satzeinteilung ab
             if (name === 'eigene') { uebGlossarHinweisNeu(); uebBisherNeu(); }
             uebMerken();
         }
@@ -3476,6 +3489,96 @@
             var a = uebAbsObj(); if (!a) return;
             a.status = a.status === 'fertig' ? 'offen' : 'fertig';
             uebMerken(); render();
+        }
+
+        /* ---- Satz für Satz übersetzen ---- */
+
+        function uebSaetze(text) {
+            var t = String(text).replace(/\s+/g, ' ').trim();
+            return t.match(/[^.!?]+[.!?]+[»«"')\]]*\s*|[^.!?]+$/g) || [t];
+        }
+
+        function uebSatzModus() {
+            var a = uebAbsObj();
+            if (!a) return;
+            state.uebSatzAn = !state.uebSatzAn;
+            state.uebSatzN = 0;
+            if (state.uebSatzAn) {
+                var s = uebSaetze(a.orig);
+                if (!a.arbeitSaetze || a.arbeitSaetze.length !== s.length) {
+                    // Vorhandene Arbeitsübersetzung möglichst auf die Sätze verteilen
+                    var alt = (a.arbeit || '').trim() ? uebSaetze(a.arbeit) : [];
+                    a.arbeitSaetze = [];
+                    for (var i = 0; i < s.length; i++) a.arbeitSaetze.push((alt[i] || '').trim());
+                }
+                // Beim ersten unübersetzten Satz beginnen
+                for (var j = 0; j < a.arbeitSaetze.length; j++) if (!a.arbeitSaetze[j].trim()) { state.uebSatzN = j; break; }
+            }
+            render();
+        }
+
+        function uebSatzGehe(d) {
+            var a = uebAbsObj();
+            if (!a) return;
+            var n = uebSaetze(a.orig).length;
+            state.uebSatzN = Math.max(0, Math.min((state.uebSatzN || 0) + d, n - 1));
+            render();
+        }
+
+        function uebSatzFeld(el) {
+            var a = uebAbsObj();
+            if (!a || !a.arbeitSaetze) return;
+            a.arbeitSaetze[state.uebSatzN || 0] = el.value;
+            a.arbeit = a.arbeitSaetze.map(function(x) { return (x || '').trim(); })
+                        .filter(function(x) { return x; }).join(' ');
+            uebAuto(el);
+            uebMerken();
+        }
+
+        // Einen einzelnen Satz von der KI übersetzen lassen (mit dem Satz davor als Zusammenhang)
+        function uebSatzKi() {
+            var p = uebP(), a = uebAbsObj();
+            if (!a) return;
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            var s = uebSaetze(a.orig), n = state.uebSatzN || 0;
+            showToast('Übersetze Satz ' + (n + 1) + '…', 'warning');
+            var sys = 'Übersetze den Satz aus dem ' + p.quellsprache + ' in präzises SCHWEIZER Hochdeutsch (nie ß, immer ss). '
+                    + 'Satztreu und genau, nichts weglassen, nichts glätten. Antworte NUR mit der Übersetzung.';
+            var user = (n > 0 ? 'ZUSAMMENHANG (Satz davor): ' + s[n - 1] + '\n'
+                        + (a.arbeitSaetze && a.arbeitSaetze[n - 1] ? 'DESSEN ÜBERSETZUNG: ' + a.arbeitSaetze[n - 1] + '\n' : '') : '')
+                    + 'SATZ: ' + s[n];
+            kiFrage(sys, user, 600, false).then(function(antw) {
+                var el = document.getElementById('ueb-satz');
+                if (el) { el.value = (antw || '').trim(); uebSatzFeld(el); }
+                showToast('✓', 'success');
+            }).catch(function(e) { showToast(e.message, 'error'); });
+        }
+
+        function uebSatzHtml(a) {
+            var s = uebSaetze(a.orig), n = Math.min(state.uebSatzN || 0, s.length - 1);
+            if (!a.arbeitSaetze || a.arbeitSaetze.length !== s.length) {
+                var alt2 = [];
+                for (var i = 0; i < s.length; i++) alt2.push((a.arbeitSaetze && a.arbeitSaetze[i]) || '');
+                a.arbeitSaetze = alt2;
+            }
+            var fertig = a.arbeitSaetze.filter(function(x) { return (x || '').trim(); }).length;
+            var h = '<div class="wz-row" style="align-items:center;margin-bottom:8px;">'
+                  + '<button class="wz-mini grau" onclick="uebSatzGehe(-1)"' + (n === 0 ? ' disabled' : '') + '>←</button>'
+                  + '<b>Satz ' + (n + 1) + ' / ' + s.length + '</b>'
+                  + '<button class="wz-mini" onclick="uebSatzGehe(1)"' + (n >= s.length - 1 ? ' disabled' : '') + '>weiter →</button>'
+                  + '<span class="wz-muted">' + fertig + ' übersetzt</span>'
+                  + '<span style="flex:1;"></span>'
+                  + '<button class="wz-mini grau" onclick="uebSatzModus()">✕ ganzer Absatz</button></div>';
+            h += '<div style="border-left:3px solid var(--accent-color);padding:6px 10px;margin-bottom:8px;font-size:14px;line-height:1.5;background:var(--bg-secondary);">'
+               + escHtml(s[n]) + '</div>';
+            h += '<textarea class="input ueb-ta" id="ueb-satz" style="min-height:70px;" placeholder="Deine hochdeutsche Übersetzung dieses Satzes…" '
+               + 'oninput="uebSatzFeld(this)" ondblclick="uebDoppelklick(this)">' + escHtml(a.arbeitSaetze[n] || '') + '</textarea>';
+            h += '<div class="wz-row" style="margin-top:6px;">'
+               + '<button class="wz-mini" onclick="uebSatzKi()"' + (kiBereit() ? '' : ' disabled') + '>✨ diesen Satz übersetzen lassen</button>'
+               + '<span class="wz-muted">Der ganze Absatztext entsteht unten laufend aus den Sätzen.</span></div>';
+            h += '<div class="wz-muted" style="margin-top:10px;font-size:12px;line-height:1.5;">'
+               + escHtml((a.arbeit || '').slice(0, 600)) + '</div>';
+            return h;
         }
 
         /* ---- Etappe 2: Verstehen ---- */
@@ -3741,20 +3844,16 @@
             state.uebChatLaeuft = true;
             uebChatBox();
 
-            var sys;
-            if (p.zielsprache === 'Mundart') {
-                sys = kiRegelPrompt() + '\n\n'
-                  + 'ROLLE: Du begleitest einen erfahrenen Mundart-Übersetzer bei SEINER Übersetzung. Er formuliert, du hilfst.\n'
-                  + 'GRUNDSATZ: Mundart ist gesprochene Sprache – kurze Sätze, Verben statt Substantivierungen, gesprochene Wortstellung. '
-                  + 'Verdichten ist erlaubt, aber zeig an, wo du straffst. Denk in Bedeutungen, nicht Wort für Wort. '
-                  + 'Wenn er fragt, ob der Inhalt noch stimmt, vergleiche seine Fassung gegen Original und Arbeitsübersetzung und benenne Abweichungen ehrlich. '
-                  + 'Mach konkrete Vorschläge, gern zwei bis drei Varianten. Knapp, Fliesstext, ohne Vorrede.';
-            } else {
-                sys = 'ROLLE: Du begleitest einen literarischen Übersetzer bei seiner Übersetzung in SCHWEIZER Hochdeutsch (nie ß, immer ss; «Guillemets»). '
-                  + 'Für die Bühne heisst das: sprechbar, atembar, kurze Bögen. '
-                  + 'Wenn er fragt, ob der Inhalt noch stimmt, vergleiche gegen Original und Arbeitsübersetzung und benenne Abweichungen ehrlich. '
-                  + 'Mach konkrete Vorschläge, gern zwei bis drei Varianten. Knapp, Fliesstext, ohne Vorrede.';
-            }
+            var sys = 'ROLLE: Du bist Gesprächspartner eines erfahrenen Literaturübersetzers – ein offenes Gespräch, wie in einem Chat. '
+                  + 'Du siehst jeweils Original, Arbeitsübersetzung und seine aktuelle Fassung.\n'
+                  + (p.zielsprache === 'Mundart'
+                     ? 'Er übersetzt in Schweizer Mundart. Die beherrscht er besser als du: Gib KEINE Mundart-Belehrungen, '
+                       + 'keine Schreibregeln und keine ungefragten Stilvorschriften. Die Schreibweise prüft er später selber.\n'
+                     : 'Er übersetzt in Schweizer Hochdeutsch (nie ß, immer ss).\n')
+                  + 'Du tust, worum er dich bittet: Inhaltstreue prüfen (seine Fassung ehrlich gegen das Original halten und Abweichungen, '
+                  + 'Auslassungen oder Verschiebungen konkret benennen), Fragen zum Original beantworten, im Netz recherchieren, '
+                  + 'Alternativen und Wendungen diskutieren. Ungefragt korrigierst du nichts.\n'
+                  + 'Antworte knapp und direkt, Fliesstext, Schweizer Hochdeutsch (nie ß), ohne Vorrede.';
             var glossarText = (p.glossar || []).map(function(g) { return g.von + ' = ' + g.zu; }).join('; ');
             var kontext = 'ORIGINAL (' + p.quellsprache + '):\n' + a.orig
                 + '\n\nARBEITSÜBERSETZUNG:\n' + (a.arbeit || '—')
@@ -4034,7 +4133,7 @@
         function renderUebersetzen() {
             var p = uebP();
             var h = '<style>.ueb-w{cursor:pointer;border-radius:3px;}.ueb-w:hover{background:var(--bg-tertiary);text-decoration:underline;}'
-                  + '.ueb-ta{width:100%;min-height:180px;resize:vertical;font-size:14px;line-height:1.55;}</style>';
+                  + '.ueb-ta{width:100%;min-height:110px;resize:vertical;font-size:14px;line-height:1.55;overflow-y:hidden;}</style>';
             h += '<div class="wz-wrap">';
 
             if (!p) {
@@ -4096,17 +4195,22 @@
             h += '<div style="line-height:1.6;font-size:14px;">' + uebOrigHtml(a.orig) + '</div>';
             h += '<div id="ueb-wort-box"></div>';
             h += '<h3 style="margin-top:14px;">Erklärungen</h3>';
-            h += '<textarea class="input ueb-ta" style="min-height:110px;" placeholder="Historisches, Kulturelles, doppelte Böden – kommt mit der Arbeitsübersetzung, du kannst ergänzen." '
-               + 'oninput="uebFeld(\'kommentar\',this.value)">' + escHtml(a.kommentar || '') + '</textarea></div>';
+            h += '<textarea class="input ueb-ta" style="min-height:90px;" placeholder="Historisches, Kulturelles, doppelte Böden – kommt mit der Arbeitsübersetzung, du kannst ergänzen." '
+               + 'oninput="uebFeld(\'kommentar\',this.value);uebAuto(this)">' + escHtml(a.kommentar || '') + '</textarea></div>';
 
             // 2: Arbeitsübersetzung
             h += '<div class="wz-box"><h3>Arbeitsübersetzung <span class="wz-muted" style="font-weight:normal;">(präzis, redigierbar)</span></h3>';
-            h += '<textarea class="input ueb-ta" id="ueb-arbeit" placeholder="Genaue hochdeutsche Übersetzung – Knopf drücken oder selber schreiben." '
-               + 'oninput="uebFeld(\'arbeit\',this.value)" ondblclick="uebDoppelklick(this)">' + escHtml(a.arbeit || '') + '</textarea>';
-            h += '<div class="wz-row" style="margin-top:8px;">';
-            h += '<button class="btn" onclick="uebArbeit()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>✨ Arbeitsübersetzung + Erklärungen</button>';
-            if (p.zielsprache === 'Mundart') h += '<span class="wz-muted">Doppelklick auf ein Wort → deine Mundartwörter dazu.</span>';
-            h += '</div>';
+            if (state.uebSatzAn) {
+                h += uebSatzHtml(a);
+            } else {
+                h += '<textarea class="input ueb-ta" id="ueb-arbeit" placeholder="Genaue hochdeutsche Übersetzung – Knopf drücken, selber schreiben oder Satz für Satz." '
+                   + 'oninput="uebFeld(\'arbeit\',this.value);uebAuto(this)" ondblclick="uebDoppelklick(this)">' + escHtml(a.arbeit || '') + '</textarea>';
+                h += '<div class="wz-row" style="margin-top:8px;">';
+                h += '<button class="btn" onclick="uebArbeit()"' + (kiBereit() ? '' : ' disabled title="Kein API-Schlüssel"') + '>✨ Arbeitsübersetzung + Erklärungen</button>';
+                h += '<button class="wz-mini grau" onclick="uebSatzModus()">📝 Satz für Satz</button>';
+                if (p.zielsprache === 'Mundart') h += '<span class="wz-muted">Doppelklick auf ein Wort → deine Mundartwörter dazu.</span>';
+                h += '</div>';
+            }
             if (p.zielsprache === 'Mundart') {
                 h += '<div class="wz-row" style="margin-top:8px;">'
                    + '<input type="text" id="ueb-wb-eingabe" class="input" style="flex:1;" placeholder="Deutsche Entsprechung suchen (Grundform, z. B. «weit»)…" '
@@ -4118,7 +4222,7 @@
             // 3: Eigene Fassung + Chat
             h += '<div class="wz-box"><h3>Deine Fassung <span class="wz-muted" style="font-weight:normal;">(' + escHtml(p.zielsprache) + ')</span></h3>';
             h += '<textarea class="input ueb-ta" id="ueb-eigene" placeholder="Hier übersetzt du. Revidiere, bis es sitzt – unten kannst du die KI dazu befragen." '
-               + 'oninput="uebFeld(\'eigene\',this.value)">' + escHtml(a.eigene || '') + '</textarea>';
+               + 'oninput="uebFeld(\'eigene\',this.value);uebAuto(this)">' + escHtml(a.eigene || '') + '</textarea>';
             h += '<div id="ueb-glossar-hinweis"></div>';
             h += '<div id="ueb-chat-log" style="max-height:260px;overflow:auto;margin-top:10px;"></div>';
             h += '<div class="wz-row" style="margin-top:8px;">';
@@ -4144,7 +4248,7 @@
             h += '</div></div>';
 
             h += '</div>';
-            setTimeout(function() { uebChatBox(); uebGlossarHinweisNeu(); }, 0);
+            setTimeout(function() { uebChatBox(); uebGlossarHinweisNeu(); uebAutoAlle(); }, 0);
             return h;
         }
 
