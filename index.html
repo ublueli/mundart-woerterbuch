@@ -1387,6 +1387,19 @@
             if (bekannt.has(w)) return true;
             if (w.length < 3) return false;
             var kand = [];
+            // Vorsilben abtrennen, auch mit eingeschobenem z (abzschlachte = ab+z+schlachte)
+            var vorsilben = ['zrugg','zäme','dure','übere','abe','ane','ufe','use','inne','embruf','ab','aa','uf','us','ii','zue','vor','um','mit','naa','no'];
+            for (var vi = 0; vi < vorsilben.length; vi++) {
+                var v = vorsilben[vi];
+                if (w.indexOf(v) === 0 && w.length > v.length + 3) {
+                    var rest = w.slice(v.length);
+                    if (rest.charAt(0) === 'z' && rest.length > 3) { kand.push(rest.slice(1)); }   // abz-, ufz-, uszue-
+                    kand.push(rest);
+                }
+            }
+            // Superlative: Schlimmschte → schlimm
+            var ms = /^(.+?)sch?t(i|e|er|em)?$/.exec(w);
+            if (ms && ms[1].length >= 3) { kand.push(ms[1], ms[1] + 'e'); }
             // Endungen abschneiden – jeder Stamm auch mit angehängtem e (meinsch → mein → meine)
             function schnitt(n) {
                 var st = w.slice(0, -n);
@@ -1525,6 +1538,23 @@
             return wort;
         }
 
+        /* Konsonantengerüst: Vokale raus, Doppelkonsonanten zusammengezogen.
+           Zwei Wörter dürfen nur dann als «gleiches Wort, andere Schreibung» gelten,
+           wenn ihr Gerüst übereinstimmt (bis auf den harten Auslaut d/t, g/k, b/p).
+           So kann «nutze» nie zu «dutze» werden und «abzschlachte» nie zu «abschlachte». */
+        function pruefGeruest(w) {
+            return w.replace(/[aeiouäöüy]/g, '').replace(/(.)\1+/g, '$1');
+        }
+        function pruefNurLautUnterschied(a, b) {
+            var ga = pruefGeruest(a), gb = pruefGeruest(b);
+            if (ga === gb) return true;
+            if (ga.length === gb.length && ga.slice(0, -1) === gb.slice(0, -1)) {
+                var p = ga.slice(-1) + gb.slice(-1);
+                return ['dt','td','gk','kg','bp','pb'].indexOf(p) >= 0;
+            }
+            return false;
+        }
+
         // Bester Vorschlag für ein unbekanntes Wort, oder null
         function pruefAehnlich(wort) {
             if (!pruefIndex) return null;
@@ -1535,6 +1565,19 @@
             var treffer = pruefVariantenTreffer(w);
             if (treffer) return { vorschlag: pruefGrossWie(wort, treffer), abstand: 1 };
 
+            // 1b. Vorsilbe abtrennen, Stamm korrigieren, wieder zusammensetzen:
+            //     abzschlaachte → ab + z + schlaachte → schlachte → abzschlachte
+            var vs = ['zrugg','zäme','dure','übere','abe','ane','ufe','use','inne','ab','aa','uf','us','ii','zue','vor','um','mit'];
+            for (var pi = 0; pi < vs.length; pi++) {
+                var p = vs[pi];
+                if (w.indexOf(p) !== 0 || w.length <= p.length + 4) continue;
+                var rest = w.slice(p.length), zwisch = '';
+                if (rest.charAt(0) === 'z' && rest.length > 4) { zwisch = 'z'; rest = rest.slice(1); }
+                if (pruefBekannt.has(rest)) break;                       // Stamm stimmt schon – nichts vorschlagen
+                var tr = pruefVariantenTreffer(rest);
+                if (tr) return { vorschlag: pruefGrossWie(wort, p + zwisch + tr), abstand: 1 };
+            }
+
             // 2. Allgemeiner Abstandsvergleich – erst ab fünf Buchstaben, sonst zu viel Zufall
             if (w.length < 5) return null;
             var max = 2;
@@ -1544,10 +1587,11 @@
                 if (!liste) continue;
                 for (var k = 0; k < liste.length; k++) {
                     var kand = liste[k];
-                    if (kand.charAt(0) !== w.charAt(0) && kand.slice(-1) !== w.slice(-1)) continue;
+                    if (kand.charAt(0) !== w.charAt(0)) continue;          // Anfangsbuchstabe muss stehen bleiben
                     // Endungsschutz: Bei ungleicher Länge muss der letzte Buchstabe gleich bleiben,
                     // sonst wäre der Unterschied eine Endung (Beugung) und kein Schreibfehler.
                     if (kand.length !== w.length && kand.slice(-1) !== w.slice(-1)) continue;
+                    if (!pruefNurLautUnterschied(w, kand)) continue;       // nur Vokal-/Auslautunterschiede
                     var d = pruefAbstand(w, kand, max);
                     if (d > max || d === 0) continue;
                     var rang = d * 10 - (pruefIstVokalwechsel(w, kand) ? 5 : 0) - (d === 1 ? 2 : 0);
@@ -1573,10 +1617,14 @@
             if (!txt.trim()) { if (!leise) showToast('Bitte zuerst einen Text einfügen', 'warning'); return; }
             if (!leise) showToast('Prüfe...', 'warning');
             pruefLadeWortschatz().then(function(bekannt) {
+                if (!leise) state.pruefKiUrteile = null;   // neuer Durchlauf, neues Urteil
                 pruefBerechnen(bekannt);
                 state.adminTab = 'pruefen';
                 render();
-                if (!leise) showToast(pruefFunde.length + ' Fundstellen', pruefFunde.length ? 'warning' : 'success');
+                if (!leise) {
+                    showToast(pruefFunde.length + ' Fundstellen', pruefFunde.length ? 'warning' : 'success');
+                    if (pruefFunde.length && kiBereit()) setTimeout(pruefKiPruefung, 100);   // KI urteilt automatisch
+                }
             }).catch(function(e) { showToast('Fehler: ' + e.message, 'error'); });
         }
 
@@ -1608,16 +1656,36 @@
                     var teile = rest.split(/([A-Za-zÄÖÜäöüßé'’´`-]+)/);
                     teile.forEach(function(t) {
                         if (!/^[A-Za-zÄÖÜäöüßé'’´`-]+$/.test(t) || t.length < 2) { html += escHtml(t); return; }
+                        // Was im Wörterbuch steht, ist per Definition richtig geschrieben –
+                        // keine Regel darf ein erfasstes Wort anstreichen (zerscht, Fäscht …)
+                        if (!/[ß'’]/.test(t) && pruefIstBekannt(t, bekannt)) { html += escHtml(t); return; }
                         var f = regelPruefeWort(t);
                         var art = null, info = null;
                         if (f.length) { art = f[0].art; info = f[0]; }
-                        else if (state.pruefUnbekannt !== false && !pruefIstBekannt(t, bekannt)) {
+                        else if (state.pruefUnbekannt !== false) {
                             var ae = (pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())) ? null : pruefAehnlich(t);
                             if (ae) { art = 'aehnlich'; info = { art:'aehnlich', regel:'Schreibweise?',
                                         text:'Im Wörterbuch steht «' + ae.vorschlag + '»', vorschlag: ae.vorschlag }; }
                             else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
                         }
                         if (!art) { html += escHtml(t); return; }
+                        // KI-Urteil einarbeiten: ok → Markierung weg, fehler → KI-Vorschlag, neu → Wortschatz
+                        var urt = state.pruefKiUrteile && state.pruefKiUrteile[t.toLowerCase()];
+                        if (urt) {
+                            if (urt.u === 'ok') { html += escHtml(t); return; }
+                            if (urt.u === 'fehler' && urt.v && urt.v !== t) {
+                                art = 'angleich';
+                                info = { art: 'angleich', regel: 'KI', text: urt.g || 'KI-Korrektur', vorschlag: urt.v };
+                            } else if (urt.u === 'neu') {
+                                art = 'neu';
+                                info = { art: 'neu', regel: 'Wortschatz', text: urt.g || 'Nicht im Wörterbuch', vorschlag: null };
+                            } else if (urt.u === 'germanismus') {
+                                art = 'hinweis';
+                                info = { art: 'hinweis', regel: 'Germanismus?',
+                                         text: (urt.g || 'Hochdeutsch im Mundartkleid') + (urt.v ? ' – Mundart wäre z. B. «' + urt.v + '»' : ''),
+                                         vorschlag: urt.v && urt.v.indexOf(' ') < 0 ? urt.v : null };
+                            }
+                        }
                         if (pruefIgnoriert && pruefIgnoriert.has(art + ':' + t.toLowerCase())) { html += escHtml(t); return; }
                         var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis' || art === 'aehnlich') ? 'wz-angleich' : 'wz-neu';
                         funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
@@ -1649,8 +1717,92 @@
         function pruefIgnoriertZurueck() {
             pruefIgnoriert = null;
             pruefAbgelehnt = null;
+            state.pruefKiUrteile = null;
             pruefRechne();
             showToast('Alle Markierungen sind wieder da', 'success');
+        }
+
+        /* ---- KI-Beurteilung der Fundstellen ----
+           Die Maschine findet Kandidaten, die KI urteilt: Eigenname/Fremdwort/Vorsilbe → weg;
+           echter Schreibfehler → Vorschlag; korrektes Mundartwort ohne Eintrag → «ins Wörterbuch». */
+
+        function pruefSatzZu(wort) {
+            var t = state.pruefText || '';
+            var i = t.indexOf(wort);
+            if (i < 0) return '';
+            var von = Math.max(t.lastIndexOf('.', i), t.lastIndexOf('!', i), t.lastIndexOf('?', i), t.lastIndexOf('\n', i)) + 1;
+            var bis = t.length;
+            ['.', '!', '?', '\n'].forEach(function(z) { var x = t.indexOf(z, i); if (x >= 0 && x < bis) bis = x + 1; });
+            return t.slice(von, bis).trim().slice(0, 200);
+        }
+
+        function pruefKiJsonArray(text) {
+            if (!text) return null;
+            var m = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+            var s = m ? m[1] : text;
+            var a = s.indexOf('['), b = s.lastIndexOf(']');
+            if (a < 0 || b < 0) return null;
+            try { return JSON.parse(s.slice(a, b + 1)); } catch (e) { return null; }
+        }
+
+        function pruefKiPruefung() {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            if (!pruefFunde.length) return;
+            var st = document.getElementById('pruef-stand');
+            if (st) st.textContent = '🤖 KI beurteilt ' + pruefFunde.length + ' Fundstellen…';
+            state.pruefKiLaeuft = true;
+
+            // Jedes Wort nur einmal, mit seinem Satz
+            var da = {}, liste = [];
+            pruefFunde.forEach(function(f) {
+                var k = f.wort.toLowerCase();
+                if (da[k] || liste.length >= 80) return;
+                da[k] = 1;
+                liste.push({ w: f.wort, satz: pruefSatzZu(f.wort), maschine: f.vorschlag || '' });
+            });
+
+            var sys = kiRegelPrompt() + '\n\n'
+              + 'AUFGABE: Die regelbasierte Vorprüfung hat in einem Mundart-Theatertext Wörter markiert. '
+              + 'Du bist die zweite, urteilende Instanz. Beurteile JEDES Wort in seinem Satz:\n'
+              + '- "ok": Das Wort ist so in Ordnung. Dazu gehören IMMER: Eigennamen, Orts- und Ländernamen '
+              + '(Shakespeare, Kanada, New York), Fremd- und Lehnwörter, fremdsprachige Einschübe, '
+              + 'korrekte Vorsilben- und Zusammensetzungsbildungen (abzschlachte = ab + z + schlachte), '
+              + 'gebeugte Formen, Superlative und regionale Varianten.\n'
+              + '- "fehler": NUR bei einem echten Verstoss gegen die Schreibregeln. Der Vorschlag ändert '
+              + 'AUSSCHLIESSLICH die Schreibweise und erhält Beugung, Vorsilben und Endung '
+              + '(abzschlaachte → abzschlachte, NIE → abschlachte). Ohne eindeutigen Vorschlag: kein "fehler".\n'
+              + '- "neu": Ein korrekt geschriebenes, echtes Mundartwort, das ein Wörterbuch führen könnte.\n'
+              + '- "germanismus": Ein hochdeutsches Wort, das bloss in Mundartschreibung gekleidet wurde, '
+              + 'obwohl die Mundart ein eigenes Wort oder eine eigene Wendung hätte (z. B. «Wildnis», «Ereignis», '
+              + '«sälbstsüchtig»). Nenne in "v" die beste echte Mundartalternative, in "g" kurz warum. '
+              + 'Sei hier kritisch – Germanismen schleichen sich gern ein.\n'
+              + 'Im Zweifel zwischen fehler und ok: "ok" – lieber eine Meldung zu wenig als eine falsche.\n\n'
+              + 'Antworte AUSSCHLIESSLICH mit einem JSON-Array:\n'
+              + '[{"w":"Wort","u":"ok|fehler|neu|germanismus","v":"Vorschlag bei fehler/germanismus, sonst leer","g":"Begründung in max. 6 Wörtern"}]';
+
+            var user = liste.map(function(e) {
+                return e.w + (e.maschine ? ' (Maschinen-Vorschlag: ' + e.maschine + ')' : '') + ' | Satz: ' + e.satz;
+            }).join('\n');
+
+            kiFrage(sys, user, 4000, false).then(function(a) {
+                var arr = pruefKiJsonArray(a);
+                state.pruefKiLaeuft = false;
+                if (!arr) { showToast('KI-Antwort nicht lesbar', 'error'); pruefUntenNeu(); return; }
+                var urteile = {};
+                arr.forEach(function(o) {
+                    if (o && o.w) urteile[String(o.w).toLowerCase()] = { u: o.u, v: o.v || '', g: o.g || '' };
+                });
+                state.pruefKiUrteile = urteile;
+                var ok = arr.filter(function(o) { return o.u === 'ok'; }).length;
+                pruefRechne();
+                var st2 = document.getElementById('pruef-stand');
+                if (st2) st2.textContent = '🤖 KI-geprüft: ' + ok + ' Markierungen aufgehoben, ' + pruefFunde.length + ' bleiben';
+                showToast('✓ KI-Urteil eingearbeitet', 'success');
+            }).catch(function(e) {
+                state.pruefKiLaeuft = false;
+                showToast('KI-Prüfung: ' + e.message, 'error');
+                pruefUntenNeu();
+            });
         }
 
         function escHtml(s) {
@@ -1775,7 +1927,11 @@
                    + '<span class="wz-badge wz-b-n">' + nN + ' unbekannt</span>'
                    + (e.regie ? '<span class="wz-muted">' + e.regie + ' Regiezeilen übersprungen</span>' : '')
                    + '</div>';
-                if (nF + nA > 0) h += '<button class="btn" onclick="pruefAlleUebernehmen()" style="margin-bottom:10px;">✓ Alle ' + (nF+nA) + ' Korrekturen übernehmen</button>';
+                h += '<div class="wz-row" style="margin-bottom:10px;">';
+                if (nF + nA > 0) h += '<button class="btn" onclick="pruefAlleUebernehmen()">✓ Alle ' + (nF+nA) + ' Korrekturen übernehmen</button>';
+                if (pruefFunde.length && kiBereit()) h += '<button class="wz-mini grau" onclick="pruefKiPruefung()"' + (state.pruefKiLaeuft ? ' disabled' : '') + '>🤖 ' + (state.pruefKiUrteile ? 'KI-Urteil erneuern' : 'KI-Urteil einholen') + '</button>';
+                if (state.pruefZurueck) h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="pruefZurueckUebernehmen()">↩ Geprüften Text in die Übersetzung übernehmen</button>';
+                h += '</div>';
                 h += '<div class="wz-result">' + e.html + '</div></div>';
 
                 if (pruefFunde.length) {
@@ -1801,8 +1957,85 @@
                     h += '<div class="wz-box"><div class="wz-row"><span class="wz-muted">Nichts mehr zu beanstanden.</span>'
                        + '<button class="wz-mini grau" onclick="pruefIgnoriertZurueck()">↩ ' + pruefIgnoriert.size + ' weggeklickte zurückholen</button></div></div>';
                 }
+                // Gespräch mit der KI über den Text – nachfragen, Netz-Recherche, Alternativen
+                h += '<div class="wz-box"><h3>💬 Mit der KI besprechen</h3>';
+                h += '<div id="pruef-chat-log" style="max-height:260px;overflow:auto;margin-bottom:8px;"></div>';
+                h += '<div class="wz-row">';
+                h += '<textarea id="pruef-chat-eingabe" class="input" rows="2" style="flex:1;" placeholder="z. B. «Isch Wildnis würklich en Germanismus? Schau im Netz nach.»" '
+                   + 'onkeypress="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();pruefChatSenden();}"></textarea>';
+                h += '<button class="btn" onclick="pruefChatSenden()"' + (kiBereit() ? '' : ' disabled') + '>Senden</button></div>';
+                h += '<div class="wz-row" style="margin-top:4px;"><button class="wz-mini grau" onclick="state.pruefChat=[];pruefChatBox();">Gespräch löschen</button>'
+                   + '<span class="wz-muted">Die KI kennt den Text und die Fundstellen' + (state.ki.websuche ? '; Web-Recherche ist eingeschaltet.' : '. Web-Recherche im Reiter KI einschalten.') + '</span></div>';
+                h += '</div>';
             }
+            setTimeout(pruefChatBox, 0);
             return h;
+        }
+
+        /* ---- Gespräch über den geprüften Text ---- */
+        function pruefChatBox() {
+            var box = document.getElementById('pruef-chat-log');
+            if (!box) return;
+            var v = state.pruefChat || [];
+            var h = '';
+            if (!v.length) h = '<div class="wz-muted">Frag nach einzelnen Urteilen, lass im Netz recherchieren oder diskutier Alternativen.</div>';
+            v.slice(-12).forEach(function(m) {
+                var ich = m.role === 'user';
+                h += '<div style="margin-bottom:8px;padding:7px 10px;border-radius:8px;font-size:13px;'
+                   + (ich ? 'background:var(--bg-tertiary);' : 'background:var(--bg-secondary);border:1px solid var(--border-color);')
+                   + '"><b style="color:var(--accent-color);">' + (ich ? 'Du' : 'KI') + '</b><br>' + kiMarkdown(m.content) + '</div>';
+            });
+            if (state.pruefChatLaeuft) h += '<div class="wz-muted">KI denkt nach…</div>';
+            box.innerHTML = h;
+            box.scrollTop = box.scrollHeight;
+        }
+
+        function pruefChatSenden() {
+            if (!kiBereit()) { showToast('Kein API-Schlüssel – siehe Reiter KI', 'error'); return; }
+            var el = document.getElementById('pruef-chat-eingabe');
+            var frage = el ? el.value.trim() : '';
+            if (!frage) return;
+            if (el) el.value = '';
+            state.pruefChat = state.pruefChat || [];
+            state.pruefChat.push({ role: 'user', content: frage });
+            state.pruefChatLaeuft = true;
+            pruefChatBox();
+
+            var sys = kiRegelPrompt() + '\n\n'
+              + 'ROLLE: Du besprichst mit einem erfahrenen Mundart-Übersetzer die Schreibweise-Prüfung seines Textes – '
+              + 'ein offenes Gespräch. Beantworte seine Fragen, begründe Urteile, such auf Wunsch im Netz nach '
+              + 'Belegen oder Mundartalternativen. Er entscheidet, du berätst. Knapp, Fliesstext, ohne Vorrede.';
+            var fundText = pruefFunde.slice(0, 40).map(function(f) {
+                return f.wort + ' [' + f.regel + ']' + (f.vorschlag ? ' → ' + f.vorschlag : '');
+            }).join('; ');
+            var kontext = 'TEXT (Anfang):\n' + (state.pruefText || '').slice(0, 2500)
+                + '\n\nAKTUELLE FUNDSTELLEN:\n' + (fundText || '(keine)');
+            var msgs = state.pruefChat.slice(-8).map(function(m) { return { role: m.role, content: m.content }; });
+            msgs[msgs.length - 1] = { role: 'user', content: kontext + '\n\n---\nFRAGE:\n' + frage };
+
+            kiFrageVerlauf(sys, msgs, 1600, true).then(function(a) {
+                state.pruefChat.push({ role: 'assistant', content: a || '(keine Antwort)' });
+                state.pruefChatLaeuft = false; pruefChatBox();
+            }).catch(function(e) {
+                state.pruefChat.push({ role: 'assistant', content: '⚠️ ' + e.message });
+                state.pruefChatLaeuft = false; pruefChatBox();
+            });
+        }
+
+        /* ---- Rückweg in die Übersetzung ---- */
+        function pruefZurueckUebernehmen() {
+            var z = state.pruefZurueck;
+            if (!z || !state.uebProjekt) { showToast('Kein Übersetzungs-Absatz gemerkt', 'warning'); return; }
+            var k = state.uebProjekt.kapitel[z.kap];
+            var a = k && k.absaetze[z.abs];
+            if (!a) { showToast('Absatz nicht mehr gefunden', 'error'); return; }
+            a.eigene = state.pruefText || '';
+            uebMerken();
+            state.pruefZurueck = null;
+            state.adminTab = 'uebersetzen';
+            state.uebKap = z.kap; state.uebAbs = z.abs;
+            render();
+            showToast('✓ Geprüfte Fassung in den Absatz übernommen', 'success');
         }
 
         // Unteren Teil nachführen, ohne den Text darüber anzurühren
@@ -4120,10 +4353,23 @@
         function uebZurPruefung() {
             state.pruefText = uebGanzerText();
             state.pruefErgebnis = null;
+            state.pruefZurueck = null;
             closeModal();
             state.adminTab = 'pruefen';
             render();
             showToast('Text übergeben – jetzt «Prüfen» drücken', 'success');
+        }
+
+        // Einen einzelnen Absatz prüfen lassen – mit Rückfahrkarte in die Übersetzung
+        function uebAbsatzPruefen() {
+            var a = uebAbsObj();
+            if (!a || !(a.eigene || '').trim()) { showToast('Dieser Absatz hat noch keine eigene Fassung', 'warning'); return; }
+            state.pruefText = a.eigene;
+            state.pruefErgebnis = null;
+            state.pruefZurueck = { kap: state.uebKap || 0, abs: state.uebAbs || 0 };
+            state.adminTab = 'pruefen';
+            render();
+            pruefText();   // Prüfung läuft sofort, KI-Urteil folgt automatisch
         }
 
         /* ---- Ansicht ---- */
@@ -4237,7 +4483,10 @@
                + 'onkeypress="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();uebChatSenden();}"></textarea>';
             h += '<button class="btn" onclick="uebChatSenden()"' + (kiBereit() ? '' : ' disabled') + '>Senden</button>';
             h += '</div>';
-            h += '<div class="wz-row" style="margin-top:4px;"><button class="wz-mini grau" onclick="uebChatLeeren()">Gespräch löschen</button></div>';
+            h += '<div class="wz-row" style="margin-top:4px;"><button class="wz-mini grau" onclick="uebChatLeeren()">Gespräch löschen</button>';
+            if (p.zielsprache === 'Mundart' && kiBereit())
+                h += '<button class="wz-mini" onclick="uebAbsatzPruefen()" title="Absatz zur Schreibweise-Prüfung schicken; die korrigierte Fassung kommt per Knopf wieder hierher zurück.">🔍 Schreibweise prüfen</button>';
+            h += '</div>';
             h += '</div>';
 
             h += '</div>';
@@ -4266,7 +4515,7 @@
             var tabs = '<div class="tabs">';
             tabs += '<button class="tab-btn' + (state.adminTab === 'freigaben' ? ' active' : '') + '" onclick="changeAdminTab(\'freigaben\')">Freigaben' + (pendingCount > 0 ? '<span class="pending-badge">' + pendingCount + '</span>' : '') + '</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Tabelle</button>';
-            tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
+            if (kiBereit()) tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'ki' ? ' active' : '') + '" onclick="changeAdminTab(\'ki\')">🤖 KI</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'uebersetzen' ? ' active' : '') + '" onclick="changeAdminTab(\'uebersetzen\')">📖 Übersetzen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
@@ -4274,6 +4523,7 @@
             tabs += '</div>';
             if (state.adminTab === 'freigaben') return tabs + renderFreigaben(pendingCount);
             if (state.adminTab === 'tabelle') return tabs + renderAdminTable();
+            if (state.adminTab === 'pruefen' && !kiBereit()) state.adminTab = 'ki';   // Prüfen braucht die KI
             if (state.adminTab === 'pruefen') return tabs + renderPruefen();
             if (state.adminTab === 'ki') return tabs + renderKI();
             if (state.adminTab === 'werkstatt') { state.adminTab = 'uebersetzen'; }   // alte Werkstatt → Übersetzen
