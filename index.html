@@ -354,9 +354,16 @@
                     var match = totalCount.match(/\/(\d+)/);
                     if (match) state.totalCount = parseInt(match[1]);
                 }
-                if ((res.status === 401 || res.status === 403) && state.accessToken) {
-                    state.accessToken = null; state.isAdmin = false;
-                    showToast('Sitzung abgelaufen – bitte neu anmelden', 'error');
+                if ((res.status === 401 || res.status === 403) && state.accessToken && !options._nochmal) {
+                    // Abgelaufenes Ticket still erneuern und den Aufruf wiederholen
+                    return authErneuern().then(function(ok) {
+                        if (ok) { options._nochmal = true; return supabaseCall(endpoint, options); }
+                        state.accessToken = null; state.isAdmin = false;
+                        try { localStorage.removeItem('mw-session'); } catch (e) {}
+                        showToast('Sitzung abgelaufen – bitte neu anmelden', 'error');
+                        render();
+                        throw new Error('Sitzung abgelaufen');
+                    });
                 }
                 if (!res.ok) return res.text().then(function(e) { throw new Error('HTTP ' + res.status + ': ' + e); });
                 if (options.method === 'DELETE' || res.status === 204) return { success: true };
@@ -4403,6 +4410,58 @@
                  + '</form></div>';
         }
 
+        /* ---- Sitzung merken: einmal anmelden, drin bleiben ---- */
+
+        function authSpeichern(body) {
+            state.accessToken = body.access_token;
+            state.isAdmin = true;
+            try {
+                localStorage.setItem('mw-session', JSON.stringify({
+                    access_token: body.access_token,
+                    refresh_token: body.refresh_token,
+                    laeuft_ab: Math.floor(Date.now() / 1000) + (body.expires_in || 3600)
+                }));
+            } catch (e) {}
+        }
+
+        function authGespeichert() {
+            try { return JSON.parse(localStorage.getItem('mw-session') || 'null'); }
+            catch (e) { return null; }
+        }
+
+        // Mit dem Erneuerungs-Schlüssel ein frisches Ticket holen
+        function authErneuern() {
+            var s = authGespeichert();
+            if (!s || !s.refresh_token) return Promise.resolve(false);
+            return fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+                method: 'POST',
+                headers: { 'apikey': CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: s.refresh_token })
+            }).then(function(r) { return r.ok ? r.json() : null; })
+              .then(function(b) {
+                  if (b && b.access_token) { authSpeichern(b); return true; }
+                  try { localStorage.removeItem('mw-session'); } catch (e) {}
+                  return false;
+              }).catch(function() { return false; });
+        }
+
+        // Beim Start: gespeicherte Sitzung wieder aufnehmen
+        function authWiederherstellen() {
+            var s = authGespeichert();
+            if (!s) return;
+            if (s.laeuft_ab - 120 > Date.now() / 1000) {
+                state.accessToken = s.access_token;
+                state.isAdmin = true;
+                render();
+            } else {
+                authErneuern().then(function(ok) { if (ok) render(); });
+            }
+            // Alle 30 Minuten still erneuern, solange die Seite offen ist
+            if (!window._authTimer) window._authTimer = setInterval(function() {
+                if (authGespeichert()) authErneuern();
+            }, 30 * 60 * 1000);
+        }
+
         function handleLogin(event) {
             event.preventDefault();
             var email = event.target.email.value.trim();
@@ -4416,8 +4475,7 @@
                 return res.json().then(function(body) { return { ok: res.ok, body: body }; });
             }).then(function(r) {
                 if (r.ok && r.body.access_token) {
-                    state.accessToken = r.body.access_token;
-                    state.isAdmin = true;
+                    authSpeichern(r.body);
                     changeView('admin');
                     showToast('Angemeldet als ' + email, 'success');
                 } else {
@@ -4429,6 +4487,7 @@
         function handleLogout() {
             state.accessToken = null;
             state.isAdmin = false;
+            try { localStorage.removeItem('mw-session'); } catch (e) {}
             changeView('woerterbuch');
             showToast('Abgemeldet', 'success');
         }
@@ -4508,7 +4567,7 @@
             else render();
         }
         
-        function init() { loadTheme(); initNav(); loadData(); }
+        function init() { loadTheme(); initNav(); authWiederherstellen(); loadData(); }
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
         else init();
     </script>
