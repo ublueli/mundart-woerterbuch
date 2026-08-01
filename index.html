@@ -1656,36 +1656,39 @@
                     var teile = rest.split(/([A-Za-zÄÖÜäöüßé'’´`-]+)/);
                     teile.forEach(function(t) {
                         if (!/^[A-Za-zÄÖÜäöüßé'’´`-]+$/.test(t) || t.length < 2) { html += escHtml(t); return; }
-                        // Was im Wörterbuch steht, ist per Definition richtig geschrieben –
-                        // keine Regel darf ein erfasstes Wort anstreichen (zerscht, Fäscht …)
-                        if (!/[ß'’]/.test(t) && pruefIstBekannt(t, bekannt)) { html += escHtml(t); return; }
-                        var f = regelPruefeWort(t);
                         var art = null, info = null;
-                        if (f.length) { art = f[0].art; info = f[0]; }
-                        else if (state.pruefUnbekannt !== false) {
-                            var ae = (pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())) ? null : pruefAehnlich(t);
-                            if (ae) { art = 'aehnlich'; info = { art:'aehnlich', regel:'Schreibweise?',
-                                        text:'Im Wörterbuch steht «' + ae.vorschlag + '»', vorschlag: ae.vorschlag }; }
-                            else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
-                        }
-                        if (!art) { html += escHtml(t); return; }
-                        // KI-Urteil einarbeiten: ok → Markierung weg, fehler → KI-Vorschlag, neu → Wortschatz
+                        // KI-Urteil hat Vorrang – es gilt auch für Wörter, die im Wörterbuch stehen
+                        // (Germanismen wie «Vorteil» oder «usschliesslich» sind korrekt geschrieben und trotzdem schriftsprachlich)
                         var urt = state.pruefKiUrteile && state.pruefKiUrteile[t.toLowerCase()];
                         if (urt) {
                             if (urt.u === 'ok') { html += escHtml(t); return; }
-                            if (urt.u === 'fehler' && urt.v && urt.v !== t) {
+                            if (urt.u === 'germanismus') {
+                                art = 'hinweis';
+                                info = { art: 'hinweis', regel: 'Germanismus?',
+                                         text: (urt.g || 'Hochdeutsch im Mundartkleid') + (urt.v ? ' – Mundart wäre z. B. «' + urt.v + '»' : ''),
+                                         vorschlag: urt.v && urt.v.indexOf(' ') < 0 ? urt.v : null };
+                            } else if (urt.u === 'fehler' && urt.v && urt.v !== t) {
                                 art = 'angleich';
                                 info = { art: 'angleich', regel: 'KI', text: urt.g || 'KI-Korrektur', vorschlag: urt.v };
                             } else if (urt.u === 'neu') {
                                 art = 'neu';
                                 info = { art: 'neu', regel: 'Wortschatz', text: urt.g || 'Nicht im Wörterbuch', vorschlag: null };
-                            } else if (urt.u === 'germanismus') {
-                                art = 'hinweis';
-                                info = { art: 'hinweis', regel: 'Germanismus?',
-                                         text: (urt.g || 'Hochdeutsch im Mundartkleid') + (urt.v ? ' – Mundart wäre z. B. «' + urt.v + '»' : ''),
-                                         vorschlag: urt.v && urt.v.indexOf(' ') < 0 ? urt.v : null };
                             }
                         }
+                        if (!art) {
+                            // Was im Wörterbuch steht, ist per Definition richtig geschrieben –
+                            // keine Regel darf ein erfasstes Wort anstreichen (zerscht, Fäscht …)
+                            if (!/[ß'’]/.test(t) && pruefIstBekannt(t, bekannt)) { html += escHtml(t); return; }
+                            var f = regelPruefeWort(t);
+                            if (f.length) { art = f[0].art; info = f[0]; }
+                            else if (state.pruefUnbekannt !== false) {
+                                var ae = (pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())) ? null : pruefAehnlich(t);
+                                if (ae) { art = 'aehnlich'; info = { art:'aehnlich', regel:'Schreibweise?',
+                                            text:'Im Wörterbuch steht «' + ae.vorschlag + '»', vorschlag: ae.vorschlag }; }
+                                else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                            }
+                        }
+                        if (!art) { html += escHtml(t); return; }
                         if (pruefIgnoriert && pruefIgnoriert.has(art + ':' + t.toLowerCase())) { html += escHtml(t); return; }
                         var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis' || art === 'aehnlich') ? 'wz-angleich' : 'wz-neu';
                         funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
@@ -1782,14 +1785,20 @@
               + 'Nenne in "v" die beste gesprochene Alternative (darf eine Wendung sein), in "g" kurz warum.\n'
               + 'Nur beim Unterschied zwischen "fehler" und "ok" gilt: im Zweifel "ok". '
               + 'Bei der Germanismus-Frage gilt das Umgekehrte: im Zweifel melden – der Übersetzer entscheidet selber.\n\n'
+              + 'ZWEITER AUFTRAG: Lies danach den GANZEN TEXT und melde zusätzlich alle schriftsprachlichen Wörter, '
+              + 'die die Vorprüfung NICHT markiert hat – auch solche, die im Wörterbuch stehen und korrekt geschrieben sind '
+              + '(«Vorteil», «usschliesslich», «Durchgang», «unbefläckt»). Je als eigenes Objekt mit u:"germanismus". '
+              + 'Melde nur einzelne Wörter (w = genau ein Wort, exakt wie im Text geschrieben), keine Wendungen.\n\n'
               + 'Antworte AUSSCHLIESSLICH mit einem JSON-Array:\n'
               + '[{"w":"Wort","u":"ok|fehler|neu|germanismus","v":"Vorschlag bei fehler/germanismus, sonst leer","g":"Begründung in max. 6 Wörtern"}]';
 
-            var user = liste.map(function(e) {
-                return e.w + (e.maschine ? ' (Maschinen-Vorschlag: ' + e.maschine + ')' : '') + ' | Satz: ' + e.satz;
-            }).join('\n');
+            var user = 'MARKIERTE KANDIDATEN:\n'
+                + liste.map(function(e) {
+                    return e.w + (e.maschine ? ' (Maschinen-Vorschlag: ' + e.maschine + ')' : '') + ' | Satz: ' + e.satz;
+                  }).join('\n')
+                + '\n\nGANZER TEXT:\n' + (state.pruefText || '').slice(0, 8000);
 
-            kiFrage(sys, user, 4000, false).then(function(a) {
+            kiFrage(sys, user, 5000, false).then(function(a) {
                 var arr = pruefKiJsonArray(a);
                 state.pruefKiLaeuft = false;
                 if (!arr) { showToast('KI-Antwort nicht lesbar', 'error'); pruefUntenNeu(); return; }
