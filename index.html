@@ -1714,17 +1714,22 @@
                         var urt = state.pruefKiUrteile && state.pruefKiUrteile[t.toLowerCase()];
                         if (urt) {
                             if (urt.u === 'ok') {
-                                // Sicherheitsnetz: Eine blosse Laut-Abweichung von einem Wörterbuchwort
-                                // bleibt sichtbar (Hausnorm!), ausser das Wort beginnt gross – dann kann
-                                // die KI zu Recht einen Eigennamen freigesprochen haben.
+                                // Sicherheitsnetz: Das KI-«ok» darf nur Eigennamen und Fremdwörter wegräumen.
+                                // Kleingeschriebene Wörter, die nicht im Wörterbuch stehen, bleiben IMMER
+                                // sichtbar – als Schreibweise-Vorschlag oder als «unbekannt».
                                 var klein = t.charAt(0) === t.charAt(0).toLowerCase();
-                                var aeOk = null;
-                                if (klein && !pruefIstBekannt(t, bekannt) && !(pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())))
-                                    aeOk = pruefAehnlich(t);
-                                if (aeOk) {
-                                    art = 'aehnlich';
-                                    info = { art: 'aehnlich', regel: 'Schreibweise?',
-                                             text: 'Im Wörterbuch steht «' + aeOk.vorschlag + '»', vorschlag: aeOk.vorschlag };
+                                if (klein && !pruefIstBekannt(t, bekannt) && !(pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase()))) {
+                                    var aeOk = pruefAehnlich(t);
+                                    if (aeOk) {
+                                        art = 'aehnlich';
+                                        info = { art: 'aehnlich', regel: 'Schreibweise?',
+                                                 text: 'Im Wörterbuch steht «' + aeOk.vorschlag + '»', vorschlag: aeOk.vorschlag };
+                                    } else {
+                                        art = 'neu';
+                                        info = { art: 'neu', regel: 'Wortschatz',
+                                                 text: (urt.g ? urt.g + ' – ' : '') + 'nicht im Wörterbuch',
+                                                 vorschlag: null, moeglich: pruefMoeglich(t) };
+                                    }
                                 } else { html += escHtml(t); return; }
                             }
                             if (urt.u === 'germanismus') {
@@ -1850,9 +1855,12 @@
               + 'mit diesem oder einem besseren Vorschlag – AUCH wenn die Schreibung dialektal vertretbar wäre. '
               + 'Einheitlichkeit geht vor Toleranz. Solche Kandidaten dürfen NICHT als "ok" verschwinden.\n\n'
               + 'Beurteile JEDES Wort in seinem Satz:\n'
-              + '- "ok" NUR für: Eigennamen, Orts- und Ländernamen (Shakespeare, Kanada, New York), '
+              + '- "ok" NUR für: Eigennamen von Personen, Orten und Werken (Shakespeare, Kanada, New York), '
               + 'Fremd- und Lehnwörter, fremdsprachige Einschübe – oder wenn der Maschinen-Vorschlag die Form '
-              + 'zerstören würde (andere Vorsilbe, andere Beugung, andere Bedeutung).\n'
+              + 'zerstören würde (andere Vorsilbe, andere Beugung, andere Bedeutung). '
+              + 'ACHTUNG: Grossgeschriebene Mundart-Substantive sind KEINE Eigennamen – ein unbekanntes '
+              + 'Substantiv wie «Hochäbeni» ist "neu", nie "ok". Gebeugte oder korrekt gebildete Wörter ohne '
+              + 'Wörterbucheintrag sind ebenfalls "neu", nie "ok" – der Übersetzer will sie sehen.\n'
               + '- "fehler": Abweichung von der Hausnorm. Der Vorschlag ändert AUSSCHLIESSLICH die Schreibweise '
               + 'und erhält Beugung, Vorsilben und Endung (abzschlaachte → abzschlachte, NIE → abschlachte). '
               + 'Ohne eindeutigen Vorschlag: kein "fehler".\n'
