@@ -2177,7 +2177,7 @@
             var a = k && k.absaetze[z.abs];
             if (!a) { showToast('Absatz nicht mehr gefunden', 'error'); return; }
             a.eigene = state.pruefText || '';
-            uebMerken();
+            if (a._id) { uebPatchWartend[a._id] = a; uebFlushAlle(); }
             state.pruefZurueck = null;
             state.adminTab = 'uebersetzen';
             state.uebKap = z.kap; state.uebAbs = z.abs;
@@ -3608,81 +3608,145 @@
             if (!text.trim()) { showToast('Kein Text vorhanden', 'warning'); return; }
             var kapitel = uebTextTeilen(text);
             if (!kapitel) { showToast('Im Text liess sich nichts finden', 'error'); return; }
-            state.uebProjekt = {
-                format: 'mundart-uebersetzung', version: 1,
+            closeModal();
+            var nAbs = 0; kapitel.forEach(function(k) { nAbs += k.absaetze.length; });
+            showToast('Lege an: ' + kapitel.length + ' Kapitel, ' + nAbs + ' Absätze…', 'warning');
+            uebInDatenbank({
                 titel: titel.trim(),
                 quellsprache: (document.getElementById('ueb-neu-quelle') || {}).value || 'Englisch',
                 zielsprache: (document.getElementById('ueb-neu-ziel') || {}).value || 'Mundart',
-                angelegt: new Date().toISOString().slice(0, 10),
                 glossar: [], kapitel: kapitel
-            };
-            state.uebKap = 0; state.uebAbs = 0; state.uebWort = null; state.uebWb = null;
-            uebHandleLoeschen();   // neues Projekt darf nie in die Datei eines alten schreiben
-            closeModal(); uebMerken(); render();
-            var nAbs = 0; kapitel.forEach(function(k) { nAbs += k.absaetze.length; });
-            showToast(kapitel.length + ' Kapitel, ' + nAbs + ' Absätze', 'success');
+            }, function(id) { uebProjektOeffnen(id); });
         }
 
-        /* ---- Speichern: einmal die Datei im Drive-Ordner wählen, danach immer dorthin ----
-           Nutzt die Datei-Schnittstelle von Chrome/Edge (showSaveFilePicker). Die Dateiwahl
-           wird im Browser gemerkt und überlebt auch einen Neustart. Safari/Firefox
-           bekommen weiterhin den normalen Download. */
+        /* ---- Speichern: jeder Absatz geht in die Datenbank ----
+           Kein Datei-Handling mehr. Beim Tippen wird der aktuelle Absatz nach kurzer
+           Pause per PATCH gespeichert, mit Revisions-Zähler gegen stilles Überschreiben.
+           Die Datei bleibt als Sicherungskopie (⬇️) und als Import erhalten. */
 
-        var uebHandle = null;
+        var uebPatchTimer = null, uebPatchWartend = {};
 
-        function uebIdb(cb) {
-            try {
-                var req = indexedDB.open('mw-uebersetzen', 1);
-                req.onupgradeneeded = function() { req.result.createObjectStore('kv'); };
-                req.onsuccess = function() { cb(req.result); };
-                req.onerror = function() { cb(null); };
-            } catch (e) { cb(null); }
+        function uebAbsatzDaten(a) {
+            return { orig: a.orig || '', arbeit: a.arbeit || '', arbeit_saetze: a.arbeitSaetze || null,
+                     kommentar: a.kommentar || '', eigene: a.eigene || '', status: a.status || 'offen',
+                     chat: a.chat || [], bearbeitet_von: 'app' };
         }
 
-        function uebHandleMerken(h) {
-            uebHandle = h;
-            state.uebDateiName = h && h.name;
-            uebIdb(function(db) {
-                if (!db) return;
-                try { db.transaction('kv', 'readwrite').objectStore('kv').put(h, 'handle'); } catch (e) {}
+        function uebFlushAlle() {
+            if (uebPatchTimer) { clearTimeout(uebPatchTimer); uebPatchTimer = null; }
+            Object.keys(uebPatchWartend).forEach(function(id) {
+                var a = uebPatchWartend[id];
+                delete uebPatchWartend[id];
+                uebAbsatzPatch(a);
             });
         }
 
-        function uebHandleHolen(cb) {
-            if (uebHandle) return cb(uebHandle);
-            uebIdb(function(db) {
-                if (!db) return cb(null);
-                try {
-                    var r = db.transaction('kv').objectStore('kv').get('handle');
-                    r.onsuccess = function() { uebHandle = r.result || null; cb(uebHandle); };
-                    r.onerror = function() { cb(null); };
-                } catch (e) { cb(null); }
-            });
-        }
-
-        function uebHandleLoeschen() {
-            uebHandle = null;
-            state.uebDateiName = null;
-            uebIdb(function(db) {
-                if (!db) return;
-                try { db.transaction('kv', 'readwrite').objectStore('kv').delete('handle'); } catch (e) {}
-            });
-        }
-
-        function uebSpeichern() {
-            var p = uebP();
-            if (!p) return;
-            p.geaendert = new Date().toISOString().slice(0, 10);
-            if (window.showSaveFilePicker) {
-                uebHandleHolen(function(h) {
-                    // Nur in die gemerkte Datei schreiben, wenn sie WIRKLICH zu diesem Projekt gehört –
-                    // sonst Dialog zeigen. Verhindert stilles Schreiben in eine fremde Datei.
-                    if (h && p.dateiname && h.name === p.dateiname) uebInDatei(h, true);
-                    else uebSpeichernUnter();
+        function uebAbsatzPatch(a) {
+            if (!a || !a._id) return;
+            var alt = a._rev || 1;
+            var d = uebAbsatzDaten(a);
+            d.revision = alt + 1;
+            supabaseCall('ueb_absaetze?id=eq.' + a._id + '&revision=eq.' + alt, {
+                method: 'PATCH', body: JSON.stringify(d)
+            }).then(function(r) {
+                if (Array.isArray(r) && r.length) { a._rev = r[0].revision; return; }
+                // Revisionskonflikt: anderswo geändert → Stand holen und die hiesige Fassung
+                // mit frischer Revision durchsetzen (wer tippt, hat recht) – aber laut sagen.
+                return supabaseCall('ueb_absaetze?id=eq.' + a._id).then(function(rows) {
+                    if (!rows || !rows[0]) return;
+                    var srv = rows[0].revision;
+                    var d2 = uebAbsatzDaten(a);
+                    d2.revision = srv + 1;
+                    return supabaseCall('ueb_absaetze?id=eq.' + a._id + '&revision=eq.' + srv, {
+                        method: 'PATCH', body: JSON.stringify(d2)
+                    }).then(function(r2) {
+                        if (Array.isArray(r2) && r2.length) a._rev = r2[0].revision;
+                        showToast('⚠️ Dieser Absatz wurde auch anderswo geändert – deine Fassung gilt jetzt', 'warning');
+                    });
                 });
-            } else {
-                uebDownload();
-            }
+            }).catch(function(e) { showToast('Speichern fehlgeschlagen: ' + e.message, 'error'); });
+        }
+
+        /* ---- Projektliste und Öffnen ---- */
+
+        function uebProjekteListe() {
+            if (!state.accessToken) return;
+            supabaseCall('ueb_projekte?select=id,titel,quellsprache,zielsprache,updated_at&archiviert=eq.false&order=updated_at.desc')
+                .then(function(d) { state.uebListe = d || []; render(); })
+                .catch(function(e) { state.uebListe = []; showToast('Projektliste: ' + e.message, 'error'); render(); });
+        }
+
+        function uebProjektOeffnen(id) {
+            showToast('Lade Projekt…', 'warning');
+            Promise.all([
+                supabaseCall('ueb_projekte?id=eq.' + id),
+                supabaseCall('ueb_kapitel?projekt_id=eq.' + id + '&order=position.asc'),
+                supabaseCall('ueb_absaetze?projekt_id=eq.' + id + '&order=position.asc&limit=10000')
+            ]).then(function(res) {
+                var p = res[0] && res[0][0];
+                if (!p) throw new Error('Projekt nicht gefunden');
+                var proKapitel = {};
+                var kapitel = (res[1] || []).map(function(k) {
+                    var o = { _id: k.id, titel: k.titel, uebersicht: k.uebersicht || '', absaetze: [] };
+                    proKapitel[k.id] = o;
+                    return o;
+                });
+                (res[2] || []).forEach(function(r) {
+                    var k = proKapitel[r.kapitel_id];
+                    if (!k) return;
+                    k.absaetze.push({ _id: r.id, _rev: r.revision, orig: r.orig || '', arbeit: r.arbeit || '',
+                        arbeitSaetze: r.arbeit_saetze || null, kommentar: r.kommentar || '',
+                        eigene: r.eigene || '', status: r.status || 'offen', chat: r.chat || [] });
+                });
+                state.uebProjekt = { _id: p.id, format: 'mundart-uebersetzung', version: 1,
+                    titel: p.titel, quellsprache: p.quellsprache, zielsprache: p.zielsprache,
+                    glossar: p.glossar || [], kapitel: kapitel };
+                state.uebKap = 0; state.uebAbs = 0;
+                for (var i = 0; i < kapitel.length; i++) {
+                    for (var j = 0; j < kapitel[i].absaetze.length; j++) {
+                        if (kapitel[i].absaetze[j].status !== 'fertig') { state.uebKap = i; state.uebAbs = j; i = kapitel.length; break; }
+                    }
+                }
+                state.uebWort = null; state.uebWb = null;
+                render();
+                showToast('«' + p.titel + '» geladen', 'success');
+            }).catch(function(e) { showToast('Öffnen fehlgeschlagen: ' + e.message, 'error'); });
+        }
+
+        /* ---- Neues Projekt / Import in die Datenbank schreiben ---- */
+        function uebInDatenbank(pd, fertig) {
+            var projId;
+            supabaseCall('ueb_projekte', { method: 'POST', body: JSON.stringify({
+                titel: pd.titel || 'Ohne Titel', quellsprache: pd.quellsprache || 'Englisch',
+                zielsprache: pd.zielsprache || 'Mundart', glossar: pd.glossar || [] }) })
+            .then(function(r) {
+                projId = r[0].id;
+                var kk = pd.kapitel.map(function(k, i) {
+                    return { projekt_id: projId, position: i + 1, titel: k.titel || 'Text', uebersicht: k.uebersicht || '' };
+                });
+                return supabaseCall('ueb_kapitel', { method: 'POST', body: JSON.stringify(kk) });
+            }).then(function(krows) {
+                var proPos = {};
+                (krows || []).forEach(function(k) { proPos[k.position] = k.id; });
+                var alle = [];
+                pd.kapitel.forEach(function(k, i) {
+                    (k.absaetze || []).forEach(function(a, j) {
+                        alle.push({ kapitel_id: proPos[i + 1], projekt_id: projId, position: j + 1,
+                            orig: a.orig || '', arbeit: a.arbeit || '', arbeit_saetze: a.arbeitSaetze || null,
+                            kommentar: a.kommentar || '', eigene: a.eigene || '',
+                            status: a.status || 'offen', chat: a.chat || [] });
+                    });
+                });
+                var i = 0;
+                function block() {
+                    if (i >= alle.length) return Promise.resolve();
+                    var teil = alle.slice(i, i + 200); i += 200;
+                    return supabaseCall('ueb_absaetze', { method: 'POST', body: JSON.stringify(teil),
+                        headers: { 'Prefer': 'return=minimal' } }).then(block);
+                }
+                return block();
+            }).then(function() { fertig(projId); })
+            .catch(function(e) { showToast('Anlegen fehlgeschlagen: ' + e.message, 'error'); });
         }
 
         // Dateiname: Projektname-woerterbuch-Datum-Uhrzeit
@@ -3695,81 +3759,37 @@
                 + '-' + z(d.getHours()) + z(d.getMinutes()) + '.json';
         }
 
-        function uebSpeichernUnter() {
-            var p = uebP();
-            if (!p) return;
-            if (!window.showSaveFilePicker) { uebDownload(); return; }
-            var name = uebDateiname();
-            window.showSaveFilePicker({
-                suggestedName: name,
-                types: [{ description: 'Übersetzungsprojekt', accept: { 'application/json': ['.json'] } }]
-            }).then(function(h) {
-                uebHandleMerken(h);
-                uebInDatei(h, false);
-            }).catch(function(e) {
-                if (e && e.name === 'AbortError') return;   // abgebrochen
-                uebDownload();
-            });
-        }
+        /* ---- Sicherungskopie (Export) und Import ---- */
 
-        function uebInDatei(h, gespeichertesHandle) {
-            Promise.resolve().then(function() {
-                return h.queryPermission({ mode: 'readwrite' });
-            }).then(function(st) {
-                if (st === 'granted') return st;
-                return h.requestPermission({ mode: 'readwrite' });
-            }).then(function(st) {
-                if (st !== 'granted') throw new Error('Keine Schreib-Erlaubnis');
-                return h.createWritable();
-            }).then(function(w) {
-                uebP().dateiname = h.name;   // das Projekt kennt seine Datei
-                return w.write(JSON.stringify(uebP())).then(function() { return w.close(); });
-            }).then(function() {
-                state.uebDateiName = h.name;
-                var el = document.getElementById('ueb-datei-name');
-                if (el) el.textContent = h.name;
-                showToast('✓ Gespeichert: ' + h.name, 'success');
-            }).catch(function(e) {
-                if (e && e.name === 'AbortError') return;
-                if (gespeichertesHandle) {
-                    // Datei verschoben oder Erlaubnis weg → neu wählen lassen
-                    uebHandle = null;
-                    showToast('Die bisherige Datei ist nicht mehr erreichbar – bitte neu wählen', 'warning');
-                    uebSpeichernUnter();
-                } else {
-                    showToast('Speichern fehlgeschlagen: ' + e.message, 'error');
-                }
-            });
+        function uebExportObjekt() {
+            var p = uebP();
+            return { format: 'mundart-uebersetzung', version: 1, titel: p.titel,
+                quellsprache: p.quellsprache, zielsprache: p.zielsprache,
+                geaendert: new Date().toISOString().slice(0, 10), glossar: p.glossar || [],
+                kapitel: (p.kapitel || []).map(function(k) {
+                    return { titel: k.titel, uebersicht: k.uebersicht || '',
+                        absaetze: (k.absaetze || []).map(function(a) {
+                            var o = { orig: a.orig || '', arbeit: a.arbeit || '', kommentar: a.kommentar || '',
+                                      eigene: a.eigene || '', status: a.status || 'offen', chat: a.chat || [] };
+                            if (a.arbeitSaetze) o.arbeitSaetze = a.arbeitSaetze;
+                            return o;
+                        }) };
+                }) };
         }
 
         function uebDownload() {
-            var p = uebP();
             var name = uebDateiname();
-            var blob = new Blob([JSON.stringify(p)], { type: 'application/json' });
+            var blob = new Blob([JSON.stringify(uebExportObjekt())], { type: 'application/json' });
             var a = document.createElement('a');
             a.href = URL.createObjectURL(blob); a.download = name;
             document.body.appendChild(a); a.click();
             setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-            showToast('Gespeichert als ' + name + ' (im Download-Ordner)', 'success');
+            showToast('Sicherungskopie: ' + name, 'success');
         }
 
-        /* ---- Laden ---- */
         function uebLadenKlick() {
-            if (window.showOpenFilePicker) {
-                window.showOpenFilePicker({
-                    types: [{ description: 'Übersetzungsprojekt', accept: { 'application/json': ['.json'] } }]
-                }).then(function(hs) {
-                    var h = hs[0];
-                    uebHandleMerken(h);           // künftige 💾 gehen in dieselbe Datei
-                    return h.getFile().then(function(f) { return f.text(); }).then(function(txt) {
-                        uebProjektAusText(txt);
-                        if (uebP()) { uebP().dateiname = h.name; state.uebDateiName = h.name; uebMerken(); }
-                    });
-                }).catch(function(e) { if (e && e.name !== 'AbortError') showToast('Fehler: ' + e.message, 'error'); });
-            } else {
-                var inp = document.getElementById('ueb-datei-input');
-                if (inp) inp.click();
-            }
+            var inp = document.getElementById('ueb-datei-input');
+            if (inp) inp.click();
         }
 
         function uebLadenDatei(input) {
@@ -3780,57 +3800,30 @@
             r.readAsText(f);
         }
 
+        // Import: Datei → Datenbank → öffnen
         function uebProjektAusText(text) {
             try {
                 var p = JSON.parse(text);
                 if (p.format !== 'mundart-uebersetzung' || !p.kapitel) throw new Error('Das ist keine Projektdatei');
-                p.kapitel.forEach(function(k) { k.absaetze.forEach(function(a) { if (!a.chat) a.chat = []; }); });
-                state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0;
-                // Beim zuletzt offenen Absatz weitermachen
-                for (var i = 0; i < p.kapitel.length; i++) {
-                    for (var j = 0; j < p.kapitel[i].absaetze.length; j++) {
-                        if (p.kapitel[i].absaetze[j].status !== 'fertig') { state.uebKap = i; state.uebAbs = j; i = p.kapitel.length; break; }
-                    }
-                }
-                state.uebWort = null; state.uebWb = null;
-                uebMerken(); render();
-                showToast('«' + (p.titel || '') + '» geladen', 'success');
+                showToast('Importiere «' + (p.titel || '') + '» in die Datenbank…', 'warning');
+                uebInDatenbank(p, function(id) { uebProjektOeffnen(id); });
             } catch (e) { showToast('Fehler: ' + e.message, 'error'); }
         }
 
+        // Aktuellen Absatz zum Speichern vormerken (kurz verzögert, damit Tippen flüssig bleibt)
         function uebMerken() {
-            if (uebSpeicherTimer) clearTimeout(uebSpeicherTimer);
-            uebSpeicherTimer = setTimeout(function() {
-                try { localStorage.setItem(UEB_AUTOSAVE, JSON.stringify(state.uebProjekt)); }
-                catch (e) {
-                    // Zu gross für den Browser-Speicher (kann bei ganzen Romanen passieren)
-                    if (!state.uebSpeicherWarnung) {
-                        state.uebSpeicherWarnung = true;
-                        showToast('Projekt zu gross für die Zwischensicherung – bitte regelmässig über 💾 als Datei speichern', 'warning');
-                    }
-                }
-            }, 1500);
-        }
-
-        function uebZwischenstand() {
-            try {
-                var s = localStorage.getItem(UEB_AUTOSAVE);
-                if (!s) return null;
-                var p = JSON.parse(s);
-                return (p && p.format === 'mundart-uebersetzung') ? p : null;
-            } catch (e) { return null; }
-        }
-
-        function uebZwischenstandLaden() {
-            var p = uebZwischenstand();
-            if (!p) { showToast('Kein Zwischenstand vorhanden', 'warning'); return; }
-            state.uebProjekt = p; state.uebKap = 0; state.uebAbs = 0; render();
-            showToast('Zwischenstand wiederhergestellt – bitte gelegentlich als Datei speichern', 'success');
+            var a = uebAbsObj();
+            if (!a || !a._id) return;
+            uebPatchWartend[a._id] = a;
+            if (uebPatchTimer) clearTimeout(uebPatchTimer);
+            uebPatchTimer = setTimeout(uebFlushAlle, 900);
         }
 
         function uebSchliessen() {
-            if (!confirm('Projekt schliessen? Nicht als Datei Gespeichertes bleibt nur im Browser-Zwischenstand.')) return;
-            state.uebProjekt = null; render();
+            uebFlushAlle();
+            state.uebProjekt = null;
+            uebProjekteListe();
+            render();
         }
 
         /* ---- Felder und Navigation ---- */
@@ -3858,6 +3851,7 @@
         function uebGehe(kap, abs) {
             var p = uebP();
             if (!p) return;
+            uebFlushAlle();   // Offenes speichern, bevor der Absatz wechselt
             kap = Math.max(0, Math.min(kap, p.kapitel.length - 1));
             abs = Math.max(0, Math.min(abs, p.kapitel[kap].absaetze.length - 1));
             state.uebKap = kap; state.uebAbs = abs;
@@ -4056,7 +4050,8 @@
               + 'Fasse in Schweizer Hochdeutsch (nie ß) knapp zusammen: Was passiert? Wer tritt auf, in welchem Verhältnis? '
               + 'Worauf läuft das Kapitel zu? Gibt es Ton- oder Registerwechsel? Fliesstext, höchstens 200 Wörter.';
             kiFrage(sys, text, 900, false).then(function(antw) {
-                k.uebersicht = antw; uebMerken();
+                k.uebersicht = antw;
+                if (k._id) supabaseCall('ueb_kapitel?id=eq.' + k._id, { method: 'PATCH', body: JSON.stringify({ uebersicht: antw }) }).catch(function() {});
                 showModal('📚 ' + escHtml(k.titel), '<div style="line-height:1.6;">' + kiMarkdown(antw) + '</div>');
             }).catch(function(e) { showToast(e.message, 'error'); });
         }
@@ -4349,9 +4344,10 @@
                 var a = k && k.absaetze[mk.abs];
                 if (!a) { fremd++; return; }
                 a.eigene = inhalt;
+                if (a._id) uebPatchWartend[a._id] = a;
                 uebernommen++;
             });
-            uebMerken(); closeModal(); render();
+            uebFlushAlle(); closeModal(); render();
             showToast('✓ ' + uebernommen + ' Absätze übernommen'
                 + (fremd ? ' – ' + (fremd === 1 ? 'eine Nummer gab es nicht, übersprungen' : fremd + ' Nummern gab es nicht, übersprungen') : ''),
                 fremd ? 'warning' : 'success');
@@ -4382,7 +4378,9 @@
                 }
             });
             p.glossar = g;
-            uebMerken(); closeModal(); uebGlossarHinweisNeu();
+            if (p._id) supabaseCall('ueb_projekte?id=eq.' + p._id, { method: 'PATCH', body: JSON.stringify({ glossar: g }) })
+                .catch(function(e) { showToast('Glossar speichern: ' + e.message, 'error'); });
+            closeModal(); uebGlossarHinweisNeu();
             showToast(g.length + ' Glossareinträge', 'success');
         }
 
@@ -4457,7 +4455,6 @@
                   + '<button class="btn" onclick="uebSprechfassung()">🗣️ Sprechfassung öffnen (zum Drucken)</button>'
                   + '<button class="btn" onclick="uebTextExport()">⬇️ Übersetzung als Textdatei</button>'
                   + '<button class="btn" onclick="uebZurPruefung()">🔍 Zur Schreibweise-Prüfung schicken</button>'
-                  + '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="closeModal();uebSpeichernUnter()">💾 An anderem Ort speichern…</button>'
                   + '</div>';
             showModal('📤 Export', c);
         }
@@ -4538,15 +4535,35 @@
             h += '<div class="wz-wrap">';
 
             if (!p) {
-                var zs = uebZwischenstand();
-                h += '<div class="wz-box"><h3>📖 Übersetzen</h3>';
-                h += '<p class="wz-muted" style="margin-bottom:12px;">Ein Projekt ist eine einzelne Datei – Originaltext, Arbeitsübersetzung, '
-                   + 'Erklärungen und deine Fassung. Du speicherst sie bei dir (z. B. im Drive-Ordner) und lädst sie auf jedem Gerät wieder.</p>';
-                h += '<div class="wz-row">';
+                h += '<div class="wz-box"><h3>📖 Übersetzungsprojekte</h3>';
+                if (!state.accessToken) {
+                    h += '<p class="wz-muted">Die Projekte liegen in der Datenbank – bitte zuerst anmelden.</p></div></div>';
+                    return h;
+                }
+                h += '<p class="wz-muted" style="margin-bottom:12px;">Deine Projekte liegen in der Datenbank und sind auf jedem Gerät dieselben. '
+                   + 'Gespeichert wird laufend und automatisch; die Datei brauchst du nur noch als Sicherungskopie oder für den Import.</p>';
+                if (state.uebListe === undefined) {
+                    state.uebListe = null;
+                    setTimeout(uebProjekteListe, 0);
+                    h += '<p class="wz-muted">Lade Projektliste…</p>';
+                } else if (state.uebListe === null) {
+                    h += '<p class="wz-muted">Lade Projektliste…</p>';
+                } else if (!state.uebListe.length) {
+                    h += '<p class="wz-muted">Noch keine Projekte.</p>';
+                } else {
+                    state.uebListe.forEach(function(pr) {
+                        h += '<div class="wz-row" style="border-top:1px solid var(--border-color);padding:8px 0;align-items:center;">'
+                           + '<b>' + escHtml(pr.titel) + '</b>'
+                           + '<span class="wz-muted">' + escHtml(pr.quellsprache) + ' → ' + escHtml(pr.zielsprache)
+                           + ' · zuletzt ' + escHtml(String(pr.updated_at || '').slice(0, 10)) + '</span>'
+                           + '<span style="flex:1;"></span>'
+                           + '<button class="btn" onclick="uebProjektOeffnen(\'' + pr.id + '\')">öffnen</button></div>';
+                    });
+                }
+                h += '<div class="wz-row" style="margin-top:14px;">';
                 h += '<button class="btn" onclick="uebNeuModal()">➕ Neues Projekt</button>';
-                h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebLadenKlick()">📂 Projektdatei laden</button>'
+                h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebLadenKlick()">📥 Projektdatei importieren</button>'
                    + '<input type="file" id="ueb-datei-input" accept=".json,application/json" style="display:none;" onchange="uebLadenDatei(this)">';
-                if (zs) h += '<button class="btn" style="background:var(--bg-tertiary);color:var(--text-primary);" onclick="uebZwischenstandLaden()">↩ Zwischenstand: «' + escHtml(zs.titel || '') + '»</button>';
                 h += '</div></div></div>';
                 return h;
             }
@@ -4567,8 +4584,8 @@
             h += '<button class="wz-mini grau" onclick="uebGlossarModal()">📇 Glossar</button>';
             h += '<button class="wz-mini grau" onclick="uebKonkordanzModal()">🔎 Konkordanz</button>';
             h += '<button class="wz-mini grau" onclick="uebExportModal()">📤 Export</button>';
-            h += '<button class="wz-mini" onclick="uebSpeichern()" title="Beim ersten Mal wählst du die Datei (z. B. im Drive-Ordner), danach geht es immer dorthin.">💾 Speichern</button>';
-            h += '<span class="wz-muted" id="ueb-datei-name" style="font-size:11px;">' + escHtml(state.uebDateiName || p.dateiname || 'noch keine Datei') + '</span>';
+            h += '<span class="wz-muted" style="font-size:11px;" title="Jede Änderung wird laufend in der Datenbank gespeichert.">☁︎ speichert automatisch</span>';
+            h += '<button class="wz-mini grau" onclick="uebDownload()" title="Sicherungskopie als Datei herunterladen">⬇️ Sicherung</button>';
             h += '<button class="wz-mini grau" onclick="uebSchliessen()">✕</button>';
             h += '</div>';
 
@@ -4965,6 +4982,12 @@
             else render();
         }
         
+        // Offene Absatz-Änderungen sichern, wenn die Seite verlassen oder versteckt wird
+        window.addEventListener('beforeunload', function() { if (typeof uebFlushAlle === 'function') uebFlushAlle(); });
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden' && typeof uebFlushAlle === 'function') uebFlushAlle();
+        });
+
         function init() { loadTheme(); initNav(); authWiederherstellen(); loadData(); }
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
         else init();
