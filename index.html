@@ -1448,11 +1448,29 @@
         var pruefIndex = null;        // Wörter nach Länge sortiert, für den Nachbarschaftsvergleich
         var pruefAbgelehnt = null;    // Wörter, bei denen der Vorschlag abgelehnt wurde
 
+        /* Lautgleiche Kanonform: Mundart-Konsonantenentsprechungen auf eine Seite gezogen.
+           Zwei Wörter mit gleicher Kanonform sind dasselbe Wort in anderer Schreibung:
+           Chindskopf ≙ Chindschopf (k↔ch), aaschbräche ≙ aaspräche (schb↔sp),
+           gwöhndlich ≙ gwöhnlich (Gleit-d). */
+        function pruefKanon(w) {
+            return w.toLowerCase()
+                .replace(/ck/g, 'k').replace(/k/g, 'ch')
+                .replace(/schb/g, 'sp').replace(/schp/g, 'sp')
+                .replace(/scht/g, 'st')
+                .replace(/ndl/g, 'nl').replace(/dt/g, 't')
+                .replace(/(.)\1+/g, '$1');
+        }
+
+        var pruefKanonMap = null;
+
         function pruefIndexBauen() {
             pruefIndex = {};
+            pruefKanonMap = {};
             pruefBekannt.forEach(function(w) {
                 if (w.length < 3) return;
                 (pruefIndex[w.length] = pruefIndex[w.length] || []).push(w);
+                var k = pruefKanon(w);
+                if (!pruefKanonMap[k]) pruefKanonMap[k] = w;
             });
         }
 
@@ -1561,6 +1579,13 @@
             var w = wort.toLowerCase().replace(/^[-'’]+|[-'’]+$/g, '');
             if (w.length < 3) return null;
 
+            // 0. Lautgleiche Schreibvariante: gleiche Kanonform wie ein Wörterbuchwort
+            //    (Chindskopf → Chindschopf, aaschbräche → aaspräche, gwöhndlich → gwöhnlich)
+            if (pruefKanonMap) {
+                var kk = pruefKanonMap[pruefKanon(w)];
+                if (kk && kk !== w) return { vorschlag: pruefGrossWie(wort, kk), abstand: 1 };
+            }
+
             // 1. Gezielte Schreibvarianten – auch bei drei Buchstaben verlässlich
             var treffer = pruefVariantenTreffer(w);
             if (treffer) return { vorschlag: pruefGrossWie(wort, treffer), abstand: 1 };
@@ -1600,6 +1625,33 @@
             }
             if (!beste) return null;
             return { vorschlag: pruefGrossWie(wort, beste.wort), abstand: beste.abstand };
+        }
+
+        /* Grosszügige Suche nach einer MÖGLICHEN Entsprechung im Wörterbuch – ohne Lautfilter.
+           Wird nie direkt als Vorschlag gezeigt, sondern der KI zur Bedeutungsprüfung vorgelegt:
+           Erst wenn die Synonyme zeigen, dass es dasselbe Wort ist, wird daraus eine Korrektur. */
+        function pruefMoeglich(wort) {
+            if (!pruefIndex) return null;
+            var w = wort.toLowerCase().replace(/^[-'’]+|[-'’]+$/g, '');
+            if (w.length < 5) return null;
+            var max = 2, beste = null;
+            var kw = pruefKanon(w);
+            for (var L = w.length - max; L <= w.length + max; L++) {
+                var liste = pruefIndex[L];
+                if (!liste) continue;
+                for (var k = 0; k < liste.length; k++) {
+                    var kand = liste[k];
+                    // Anfang muss lautlich zusammenpassen (auch k↔ch usw.)
+                    if (kand.charAt(0) !== w.charAt(0) && pruefKanon(kand).charAt(0) !== kw.charAt(0)) continue;
+                    var d = pruefAbstand(w, kand, max);
+                    if (d === 0 || d > max) {
+                        var dk = pruefAbstand(pruefKanon(kand), kw, max);
+                        if (dk === 0 && kand !== w) d = 1; else continue;
+                    }
+                    if (!beste || d < beste.d) beste = { wort: kand, d: d };
+                }
+            }
+            return beste ? beste.wort : null;
         }
 
         // «Nein, das ist ein eigenes Wort» – ab jetzt als neues Wort führen
@@ -1661,7 +1713,20 @@
                         // (Germanismen wie «Vorteil» oder «usschliesslich» sind korrekt geschrieben und trotzdem schriftsprachlich)
                         var urt = state.pruefKiUrteile && state.pruefKiUrteile[t.toLowerCase()];
                         if (urt) {
-                            if (urt.u === 'ok') { html += escHtml(t); return; }
+                            if (urt.u === 'ok') {
+                                // Sicherheitsnetz: Eine blosse Laut-Abweichung von einem Wörterbuchwort
+                                // bleibt sichtbar (Hausnorm!), ausser das Wort beginnt gross – dann kann
+                                // die KI zu Recht einen Eigennamen freigesprochen haben.
+                                var klein = t.charAt(0) === t.charAt(0).toLowerCase();
+                                var aeOk = null;
+                                if (klein && !pruefIstBekannt(t, bekannt) && !(pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())))
+                                    aeOk = pruefAehnlich(t);
+                                if (aeOk) {
+                                    art = 'aehnlich';
+                                    info = { art: 'aehnlich', regel: 'Schreibweise?',
+                                             text: 'Im Wörterbuch steht «' + aeOk.vorschlag + '»', vorschlag: aeOk.vorschlag };
+                                } else { html += escHtml(t); return; }
+                            }
                             if (urt.u === 'germanismus') {
                                 art = 'hinweis';
                                 info = { art: 'hinweis', regel: 'Germanismus?',
@@ -1685,13 +1750,14 @@
                                 var ae = (pruefAbgelehnt && pruefAbgelehnt.has(t.toLowerCase())) ? null : pruefAehnlich(t);
                                 if (ae) { art = 'aehnlich'; info = { art:'aehnlich', regel:'Schreibweise?',
                                             text:'Im Wörterbuch steht «' + ae.vorschlag + '»', vorschlag: ae.vorschlag }; }
-                                else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null }; }
+                                else { art = 'neu'; info = { art:'neu', regel:'Wortschatz', text:'Nicht im Wörterbuch', vorschlag:null,
+                                            moeglich: pruefMoeglich(t) }; }
                             }
                         }
                         if (!art) { html += escHtml(t); return; }
                         if (pruefIgnoriert && pruefIgnoriert.has(art + ':' + t.toLowerCase())) { html += escHtml(t); return; }
                         var cls = art === 'fehler' ? 'wz-fehler' : (art === 'angleich' || art === 'hinweis' || art === 'aehnlich') ? 'wz-angleich' : 'wz-neu';
-                        funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, zeile: zi });
+                        funde.push({ i: idx, wort: t, art: art, regel: info.regel, text: info.text, vorschlag: info.vorschlag, moeglich: info.moeglich || null, zeile: zi });
                         html += '<span class="wz-hit ' + cls + '" data-i="' + idx + '" onclick="pruefWegklicken(' + idx + ')" '
                               + 'title="' + escHtml(info.text) + ' – klicken, um die Markierung zu entfernen">' + escHtml(t) + '</span>';
                         idx++;
@@ -1755,26 +1821,46 @@
             if (st) st.textContent = '🤖 KI beurteilt ' + pruefFunde.length + ' Fundstellen…';
             state.pruefKiLaeuft = true;
 
-            // Jedes Wort nur einmal, mit seinem Satz
+            // Jedes Wort nur einmal, mit seinem Satz und allfälliger möglicher Entsprechung
             var da = {}, liste = [];
             pruefFunde.forEach(function(f) {
                 var k = f.wort.toLowerCase();
                 if (da[k] || liste.length >= 80) return;
                 da[k] = 1;
-                liste.push({ w: f.wort, satz: pruefSatzZu(f.wort), maschine: f.vorschlag || '' });
+                liste.push({ w: f.wort, satz: pruefSatzZu(f.wort), maschine: f.vorschlag || '', moeglich: f.moeglich || '' });
             });
+
+            // Bedeutungen der möglichen Entsprechungen holen – die KI urteilt über den INHALT
+            var moegliche = [];
+            liste.forEach(function(e) { if (e.moeglich && moegliche.indexOf(e.moeglich) < 0) moegliche.push(e.moeglich); });
+            var synHolen = moegliche.length
+                ? supabaseCall('woerter?select=begriff,synonyme,bedeutung&begriff=in.(' + moegliche.map(function(m) { return '"' + encodeURIComponent(m) + '"'; }).join(',') + ')&limit=100')
+                    .then(function(d) {
+                        var map = {};
+                        (d || []).forEach(function(r) { map[(r.begriff || '').toLowerCase()] = (r.synonyme || r.bedeutung || '').slice(0, 120); });
+                        return map;
+                    }).catch(function() { return {}; })
+                : Promise.resolve({});
 
             var sys = kiRegelPrompt() + '\n\n'
               + 'AUFGABE: Die regelbasierte Vorprüfung hat in einem Mundart-Theatertext Wörter markiert. '
-              + 'Du bist die zweite, urteilende Instanz. Beurteile JEDES Wort in seinem Satz:\n'
-              + '- "ok": Das Wort ist so in Ordnung. Dazu gehören IMMER: Eigennamen, Orts- und Ländernamen '
-              + '(Shakespeare, Kanada, New York), Fremd- und Lehnwörter, fremdsprachige Einschübe, '
-              + 'korrekte Vorsilben- und Zusammensetzungsbildungen (abzschlachte = ab + z + schlachte), '
-              + 'gebeugte Formen, Superlative und regionale Varianten.\n'
-              + '- "fehler": NUR bei einem echten Verstoss gegen die Schreibregeln. Der Vorschlag ändert '
-              + 'AUSSCHLIESSLICH die Schreibweise und erhält Beugung, Vorsilben und Endung '
-              + '(abzschlaachte → abzschlachte, NIE → abschlachte). Ohne eindeutigen Vorschlag: kein "fehler".\n'
-              + '- "neu": Ein korrekt geschriebenes, echtes Mundartwort, das ein Wörterbuch führen könnte.\n'
+              + 'Du bist die zweite, urteilende Instanz.\n\n'
+              + 'GRUNDSATZ: Das Wörterbuch ist die HAUSNORM dieses Übersetzers. Weicht ein Wort nur in der '
+              + 'Schreibung von einem Wörterbuchwort ab (Maschinen-Vorschlag vorhanden), dann ist das ein "fehler" '
+              + 'mit diesem oder einem besseren Vorschlag – AUCH wenn die Schreibung dialektal vertretbar wäre. '
+              + 'Einheitlichkeit geht vor Toleranz. Solche Kandidaten dürfen NICHT als "ok" verschwinden.\n\n'
+              + 'Beurteile JEDES Wort in seinem Satz:\n'
+              + '- "ok" NUR für: Eigennamen, Orts- und Ländernamen (Shakespeare, Kanada, New York), '
+              + 'Fremd- und Lehnwörter, fremdsprachige Einschübe – oder wenn der Maschinen-Vorschlag die Form '
+              + 'zerstören würde (andere Vorsilbe, andere Beugung, andere Bedeutung).\n'
+              + '- "fehler": Abweichung von der Hausnorm. Der Vorschlag ändert AUSSCHLIESSLICH die Schreibweise '
+              + 'und erhält Beugung, Vorsilben und Endung (abzschlaachte → abzschlachte, NIE → abschlachte). '
+              + 'Ohne eindeutigen Vorschlag: kein "fehler".\n'
+              + 'Steht bei einem Kandidaten eine «mögliche Entsprechung im Wörterbuch» samt Bedeutung: Prüfe am SINN '
+              + 'im Satz, ob es dasselbe Wort in anderer Schreibung ist. Wenn ja → "fehler" mit der Wörterbuch-Schreibung '
+              + '(Beugung des Textworts erhalten). Wenn die Bedeutung nicht passt, ignoriere die Entsprechung.\n'
+              + '- "neu": Ein echtes Mundartwort ohne Wörterbucheintrag. Solche Wörter MÜSSEN als "neu" sichtbar '
+              + 'bleiben, damit der Übersetzer sie aufnehmen kann – nie als "ok" wegräumen.\n'
               + '- "germanismus": Ein hochdeutsches Wort oder eine schriftsprachliche Bildung, die bloss in '
               + 'Mundartschreibung gekleidet wurde, obwohl die gesprochene Mundart anders formuliert. '
               + 'HIER BIST DU STRENG, nicht milde – auch bei Wörtern, die korrekt gebildet scheinen. '
@@ -1792,13 +1878,18 @@
               + 'Antworte AUSSCHLIESSLICH mit einem JSON-Array:\n'
               + '[{"w":"Wort","u":"ok|fehler|neu|germanismus","v":"Vorschlag bei fehler/germanismus, sonst leer","g":"Begründung in max. 6 Wörtern"}]';
 
+            synHolen.then(function(synMap) {
             var user = 'MARKIERTE KANDIDATEN:\n'
                 + liste.map(function(e) {
-                    return e.w + (e.maschine ? ' (Maschinen-Vorschlag: ' + e.maschine + ')' : '') + ' | Satz: ' + e.satz;
+                    var z = e.w;
+                    if (e.maschine) z += ' (Maschinen-Vorschlag: ' + e.maschine + ')';
+                    if (e.moeglich) z += ' (mögliche Entsprechung im Wörterbuch: «' + e.moeglich + '»'
+                        + (synMap[e.moeglich.toLowerCase()] ? ', bedeutet: ' + synMap[e.moeglich.toLowerCase()] : '') + ')';
+                    return z + ' | Satz: ' + e.satz;
                   }).join('\n')
                 + '\n\nGANZER TEXT:\n' + (state.pruefText || '').slice(0, 8000);
 
-            kiFrage(sys, user, 5000, false).then(function(a) {
+            return kiFrage(sys, user, 5000, false); }).then(function(a) {
                 var arr = pruefKiJsonArray(a);
                 state.pruefKiLaeuft = false;
                 if (!arr) { showToast('KI-Antwort nicht lesbar', 'error'); pruefUntenNeu(); return; }
@@ -1959,6 +2050,7 @@
                         if (f.vorschlag) h += '<button class="wz-mini" onclick="pruefUebernehmen(' + i + ')">übernehmen</button>';
                         if (f.art === 'aehnlich') h += '<button class="wz-mini grau" onclick="pruefAblehnen(' + i + ')">nein, eigenes Wort</button>';
                         if (f.art === 'neu') h += '<button class="wz-mini grau" onclick="pruefNeuesWort(' + i + ')">ins Wörterbuch</button>';
+                        if (f.regel === 'Germanismus?') h += '<button class="wz-mini" onclick="pruefBesprechen(' + i + ')">💬 Lösung suchen</button>';
                         h += '<button class="wz-mini grau" title="Markierung entfernen" onclick="pruefIgnorieren(' + i + ')">✕</button>';
                         h += '</div>';
                     });
@@ -1987,17 +2079,50 @@
         }
 
         /* ---- Gespräch über den geprüften Text ---- */
+
+        // Eine Fundstelle (v. a. Germanismus) direkt zur Besprechung in den Chat geben
+        function pruefBesprechen(i) {
+            var f = pruefFunde[i];
+            if (!f) return;
+            var el = document.getElementById('pruef-chat-eingabe');
+            if (el) {
+                el.value = 'Such mit mir e treffendi Mundartlösig für «' + f.wort + '» im Satz: «' + pruefSatzZu(f.wort) + '». '
+                         + 'Mach mer zwei, drei Vorschläg – gärn au als Umschriibig oder Wendig.';
+                el.focus();
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        // Einigung aus dem Chat in den Text übernehmen
+        function pruefErsetzeAusChat(alt, neu) {
+            var t = state.pruefText || '';
+            if (t.indexOf(alt) < 0) { showToast('«' + alt + '» steht so nicht (mehr) im Text', 'warning'); return; }
+            state.pruefText = t.split(alt).join(neu);
+            pruefTextfeldNachfuehren();
+            showToast('«' + alt + '» → «' + neu + '»', 'success');
+            pruefRechne();
+        }
+
         function pruefChatBox() {
             var box = document.getElementById('pruef-chat-log');
             if (!box) return;
             var v = state.pruefChat || [];
             var h = '';
-            if (!v.length) h = '<div class="wz-muted">Frag nach einzelnen Urteilen, lass im Netz recherchieren oder diskutier Alternativen.</div>';
-            v.slice(-12).forEach(function(m) {
+            if (!v.length) h = '<div class="wz-muted">Frag nach einzelnen Urteilen, lass im Netz recherchieren oder diskutier Alternativen. Bei Germanismen: «💬 Lösung suchen» in der Fundliste.</div>';
+            v.slice(-12).forEach(function(m, mi, arr) {
                 var ich = m.role === 'user';
                 h += '<div style="margin-bottom:8px;padding:7px 10px;border-radius:8px;font-size:13px;'
                    + (ich ? 'background:var(--bg-tertiary);' : 'background:var(--bg-secondary);border:1px solid var(--border-color);')
-                   + '"><b style="color:var(--accent-color);">' + (ich ? 'Du' : 'KI') + '</b><br>' + kiMarkdown(m.content) + '</div>';
+                   + '"><b style="color:var(--accent-color);">' + (ich ? 'Du' : 'KI') + '</b><br>' + kiMarkdown(m.content);
+                // Einigungen erkennbar machen: Ersetze «alt» durch «neu» → Übernehmen-Knopf
+                if (!ich && mi === arr.length - 1) {
+                    var re = /Ersetze\s*«([^»]+)»\s*durch\s*«([^»]+)»/g, em;
+                    while ((em = re.exec(m.content)) !== null) {
+                        h += '<div style="margin-top:6px;"><button class="wz-mini" onclick="pruefErsetzeAusChat(\''
+                           + escAttr(em[1]) + '\',\'' + escAttr(em[2]) + '\')">✓ «' + escHtml(em[1]) + '» → «' + escHtml(em[2]) + '» übernehmen</button></div>';
+                    }
+                }
+                h += '</div>';
             });
             if (state.pruefChatLaeuft) h += '<div class="wz-muted">KI denkt nach…</div>';
             box.innerHTML = h;
@@ -2883,6 +3008,7 @@
                     if (!t) return;
                     pruefBekannt.add(t);
                     if (pruefIndex && t.length >= 3) (pruefIndex[t.length] = pruefIndex[t.length] || []).push(t);
+                    if (pruefKanonMap && t.length >= 3 && !pruefKanonMap[pruefKanon(t)]) pruefKanonMap[pruefKanon(t)] = t;
                 });
             });
         }
