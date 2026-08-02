@@ -1688,6 +1688,7 @@
         }
 
         function pruefBerechnen(bekannt) {
+                state.pruefKiOk = [];   // von der KI freigegebene Wörter – bleiben sichtbar
                 var txt = state.pruefText || '';
                 var zeilen = txt.split('\n');
                 var funde = [];
@@ -1730,7 +1731,12 @@
                                                  text: (urt.g ? urt.g + ' – ' : '') + 'nicht im Wörterbuch',
                                                  vorschlag: null, moeglich: pruefMoeglich(t) };
                                     }
-                                } else { html += escHtml(t); return; }
+                                } else {
+                                    // Freigegeben: nicht spurlos verschwinden lassen, sondern ausweisen
+                                    var schonDa = state.pruefKiOk.some(function(o) { return o.wort === t; });
+                                    if (!schonDa) state.pruefKiOk.push({ wort: t, grund: urt.g || '' });
+                                    html += escHtml(t); return;
+                                }
                             }
                             if (urt.u === 'germanismus') {
                                 art = 'hinweis';
@@ -2083,6 +2089,15 @@
                 } else if (pruefIgnoriert && pruefIgnoriert.size) {
                     h += '<div class="wz-box"><div class="wz-row"><span class="wz-muted">Nichts mehr zu beanstanden.</span>'
                        + '<button class="wz-mini grau" onclick="pruefIgnoriertZurueck()">↩ ' + pruefIgnoriert.size + ' weggeklickte zurückholen</button></div></div>';
+                }
+                // Von der KI freigegebene Maschinenfunde – sichtbar statt spurlos weg
+                if (state.pruefKiOk && state.pruefKiOk.length) {
+                    h += '<div class="wz-box"><h3 style="color:var(--text-muted);">✔︎ Von der KI freigegeben (' + state.pruefKiOk.length + ')</h3>'
+                       + '<div class="wz-muted" style="font-size:13px;line-height:1.7;">'
+                       + state.pruefKiOk.map(function(o) {
+                           return '<b>' + escHtml(o.wort) + '</b>' + (o.grund ? ' <span style="opacity:.75;">(' + escHtml(o.grund) + ')</span>' : '');
+                         }).join(' · ')
+                       + '</div><div class="wz-muted" style="font-size:12px;margin-top:6px;">Diese Wörter hatte die Maschine markiert; die KI hält sie für in Ordnung (Eigennamen, Fremdwörter, korrekte Bildungen). Bist du anderer Meinung, sag es im Gespräch unten.</div></div>';
                 }
                 // Gespräch mit der KI über den Text – nachfragen, Netz-Recherche, Alternativen
                 h += '<div class="wz-box"><h3>💬 Mit der KI besprechen</h3>';
