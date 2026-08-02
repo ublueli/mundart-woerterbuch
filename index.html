@@ -1847,6 +1847,7 @@
                     }).catch(function() { return {}; })
                 : Promise.resolve({});
 
+            var germStufe = state.pruefGermStufe || 'massvoll';
             var sys = kiRegelPrompt() + '\n\n'
               + 'AUFGABE: Die regelbasierte Vorprüfung hat in einem Mundart-Theatertext Wörter markiert. '
               + 'Du bist die zweite, urteilende Instanz.\n\n'
@@ -1869,20 +1870,27 @@
               + '(Beugung des Textworts erhalten). Wenn die Bedeutung nicht passt, ignoriere die Entsprechung.\n'
               + '- "neu": Ein echtes Mundartwort ohne Wörterbucheintrag. Solche Wörter MÜSSEN als "neu" sichtbar '
               + 'bleiben, damit der Übersetzer sie aufnehmen kann – nie als "ok" wegräumen.\n'
-              + '- "germanismus": Ein hochdeutsches Wort oder eine schriftsprachliche Bildung, die bloss in '
-              + 'Mundartschreibung gekleidet wurde, obwohl die gesprochene Mundart anders formuliert. '
-              + 'HIER BIST DU STRENG, nicht milde – auch bei Wörtern, die korrekt gebildet scheinen. '
-              + 'Typische Verdächtige: Ableitungen auf -bar, -nis, -ung, -heit, -keit («befahrbar», «Wildnis»), '
-              + 'substantivierte Partizipien («de Reisend»), Schriftkomposita («Stromschnelle»), '
-              + 'Schriftadverbien («ringsum», «unzählige»). Die Mundart löst so etwas in Verben und kurze Sätze auf: '
-              + 'statt «isch befahrbar gsi» → «het me chönne befahre». '
-              + 'Nenne in "v" die beste gesprochene Alternative (darf eine Wendung sein), in "g" kurz warum.\n'
-              + 'Nur beim Unterschied zwischen "fehler" und "ok" gilt: im Zweifel "ok". '
-              + 'Bei der Germanismus-Frage gilt das Umgekehrte: im Zweifel melden – der Übersetzer entscheidet selber.\n\n'
-              + 'ZWEITER AUFTRAG: Lies danach den GANZEN TEXT und melde zusätzlich alle schriftsprachlichen Wörter, '
-              + 'die die Vorprüfung NICHT markiert hat – auch solche, die im Wörterbuch stehen und korrekt geschrieben sind '
-              + '(«Vorteil», «usschliesslich», «Durchgang», «unbefläckt»). Je als eigenes Objekt mit u:"germanismus". '
-              + 'Melde nur einzelne Wörter (w = genau ein Wort, exakt wie im Text geschrieben), keine Wendungen.\n\n'
+              + (germStufe === 'aus'
+                 ? '- Die Kategorie "germanismus" wird NICHT verwendet – nur ok, fehler und neu.\n'
+                   + 'Beim Unterschied zwischen "fehler" und "ok" gilt: im Zweifel "ok".\n\n'
+                 : germStufe === 'streng'
+                 ? '- "germanismus": Ein hochdeutsches Wort oder eine schriftsprachliche Bildung im Mundartkleid. '
+                   + 'HIER BIST DU STRENG – auch bei Wörtern, die korrekt gebildet scheinen: Ableitungen auf '
+                   + '-bar, -nis, -ung, -heit, -keit, substantivierte Partizipien, Schriftkomposita, Schriftadverbien. '
+                   + 'Nenne in "v" die beste gesprochene Alternative (darf eine Wendung sein), in "g" kurz warum.\n'
+                   + 'Nur bei fehler/ok gilt: im Zweifel "ok". Bei Germanismen: im Zweifel melden.\n\n'
+                   + 'ZWEITER AUFTRAG: Lies danach den GANZEN TEXT und melde zusätzlich alle schriftsprachlichen '
+                   + 'Wörter, die die Vorprüfung nicht markiert hat – auch korrekt geschriebene aus dem Wörterbuch. '
+                   + 'Je als eigenes Objekt mit u:"germanismus", nur einzelne Wörter (w exakt wie im Text).\n\n'
+                 : '- "germanismus": Ein Wort, das die GESPROCHENE Mundart kaum je brauchen würde und für das eine '
+                   + 'deutlich bessere, geläufige Lösung auf der Hand liegt. SEI MASSVOLL: Erzählprosa darf schriftnah '
+                   + 'sein – gewöhnliche Komposita («Urwald», «Stromschnelle»), gängige Wörter («Gebiet») und alles, '
+                   + 'was ein Mundartsprecher beim Erzählen sagen könnte, ist KEIN Germanismus. Melde nur die klar '
+                   + 'störenden Fälle, höchstens die fünf auffälligsten im ganzen Text. '
+                   + 'Nenne in "v" die gesprochene Alternative, in "g" kurz warum.\n'
+                   + 'Beim Unterschied zwischen "fehler" und "ok" gilt: im Zweifel "ok".\n\n'
+                   + 'ZWEITER AUFTRAG: Lies danach den GANZEN TEXT und melde daraus NUR die wenigen wirklich störenden '
+                   + 'schriftsprachlichen Wörter (höchstens fünf), je als Objekt mit u:"germanismus", nur einzelne Wörter.\n\n')
               + 'Antworte AUSSCHLIESSLICH mit einem JSON-Array:\n'
               + '[{"w":"Wort","u":"ok|fehler|neu|germanismus","v":"Vorschlag bei fehler/germanismus, sonst leer","g":"Begründung in max. 6 Wörtern"}]';
 
@@ -2006,6 +2014,11 @@
             h += '<button class="btn" onclick="pruefText()">🔍 Prüfen</button>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-regie"' + (state.pruefRegie !== false ? ' checked' : '') + '> Regieanweisungen überspringen</label>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="pruef-unbekannt"' + (state.pruefUnbekannt !== false ? ' checked' : '') + '> unbekannte Wörter markieren</label>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;">Germanismen: <select class="input" style="width:auto;padding:2px 6px;" onchange="state.pruefGermStufe=this.value">'
+               + '<option value="massvoll"' + ((state.pruefGermStufe || 'massvoll') === 'massvoll' ? ' selected' : '') + '>massvoll</option>'
+               + '<option value="streng"' + (state.pruefGermStufe === 'streng' ? ' selected' : '') + '>streng</option>'
+               + '<option value="aus"' + (state.pruefGermStufe === 'aus' ? ' selected' : '') + '>aus</option>'
+               + '</select></label>';
             h += '<button class="wz-mini grau" onclick="pruefKopieren()">📋 Text kopieren</button>';
             h += '<button class="wz-mini grau" onclick="pruefZuruecksetzen()">✕ Ergebnis schliessen</button>';
             h += '<span class="wz-muted" id="pruef-stand"></span>';
