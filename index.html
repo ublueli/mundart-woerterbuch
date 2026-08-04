@@ -2051,11 +2051,11 @@
             state.pruefErgebnis = null; pruefFunde = []; render();
         }
 
-        // Unbekanntes Wort direkt ins Wörterbuch aufnehmen
+        // Unbekanntes Wort direkt ins Wörterbuch aufnehmen – mit dem Satz aus dem Text
         function pruefNeuesWort(i) {
             var f = pruefFunde[i];
             if (!f) return;
-            adminNeuerEintrag(f.wort);
+            adminNeuerEintrag(f.wort, pruefSatzZu(f.wort));
         }
 
         function renderPruefen() {
@@ -2575,7 +2575,11 @@
               + '- kategorie: genau eine aus dieser Liste: ' + kats + '\n'
               + '- nebenform: nur bei Verben das Partizip II, sonst leer.\n'
               + '- nebenform_reim: Reim des Partizips, sonst leer.';
-            kiFrage(sys, 'Mundartwort: ' + begriff, 1500, true).then(function(a) {
+            var satzDa = ((document.getElementById((zielId || 'adm_') + 'beispielsatz') || {}).value || '').trim();
+            var frage = 'Mundartwort: ' + begriff;
+            if (satzDa) frage += '\n\nDas Wort stammt aus einem geprüften Text. Verwende als beispielsatz DIESEN Satz '
+                + '(behutsames Kürzen auf den Kern ist erlaubt, nichts Neues erfinden):\n«' + satzDa + '»';
+            kiFrage(sys, frage, 1500, true).then(function(a) {
                 var o = kiJson(a);
                 if (!o) { showToast('Antwort nicht lesbar', 'error'); return; }
                 ['begriff','reim','wortart','synonyme','bedeutung','beispielsatz','bemerkung','kategorie','nebenform','nebenform_reim'].forEach(function(f) {
@@ -2892,7 +2896,7 @@
 
         /* ═══════════ NEUER EINTRAG (Admin, mit KI-Hilfe) ═══════════ */
 
-        function adminNeuerEintrag(vorgabe) {
+        function adminNeuerEintrag(vorgabe, satzVorgabe) {
             if (!state.isAdmin) { showToast('Nur für Admin', 'error'); return; }
             var felder = [['begriff','Begriff'],['reim','Reim'],['wortart','Wortart'],['kategorie','Kategorie'],
                           ['nebenform','Partizip / Nebenform'],['nebenform_reim','Reim der Nebenform']];
@@ -2912,8 +2916,10 @@
                    + '</div>';
             });
             flaechen.forEach(function(f) {
-                c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1] + '</label>'
-                   + '<textarea id="adm_' + f[0] + '" class="input" rows="2"></textarea></div>';
+                var inhalt = (f[0] === 'beispielsatz' && satzVorgabe) ? escHtml(satzVorgabe) : '';
+                c += '<div class="card-row"><label class="card-label" style="display:block;margin-bottom:4px;">' + f[1]
+                   + (inhalt ? ' <span class="wz-muted" style="font-weight:normal;">(aus dem geprüften Text)</span>' : '') + '</label>'
+                   + '<textarea id="adm_' + f[0] + '" class="input" rows="2">' + inhalt + '</textarea></div>';
             });
             c += '<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">'
                + '<button type="submit" class="btn">💾 Ins Wörterbuch aufnehmen</button>'
