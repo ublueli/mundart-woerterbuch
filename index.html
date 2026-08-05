@@ -1615,6 +1615,21 @@
 
         function stkDateiWaehlen() { var i = document.getElementById('stk-datei'); if (i) i.click(); }
 
+        function stkTextUebernehmen() {
+            var ta = document.getElementById('stk-ta');
+            var t = ta ? ta.value : '';
+            if (!t.trim()) { showToast('Das Feld ist leer', 'warning'); return; }
+            stk.eingefuegt = t;
+            stk.name = 'Eingefügter Text'; stk.format = 'txt';
+            stk.docxTeile = null; stk.docxXml = '';
+            stk.geprueft = false; stk.funde = []; stk.gruppen = []; stk.neueWoerter = [];
+            stk.uebernommen = 0; stk.pos = 0; stk._satzCache = null;
+            stk.germ.funde = []; stk.germ.fertig = false;
+            stk.abs = stkStrukturErkennen(stkTextLesen(t));
+            render();
+            showToast(stk.abs.length + ' Zeilen übernommen', 'success');
+        }
+
         function stkDateiGelesen(input) {
             var f = input.files && input.files[0];
             if (!f) return;
@@ -1657,7 +1672,9 @@
         var STK_BILD = /^\s*(\d+\s*\.?\s*(BILD|AKT|SZENE|AUFZUG)|BILD\s*\d+|AKT\s*\d+|SZENE\s*\d+|(ERSTER|ZWEITER|DRITTER|VIERTER|FÜNFTER)\s+(AKT|AUFZUG))\b/i;
 
         function stkStrukturErkennen(abs) {
-            var begonnen = false, bild = 0;
+            // Gibt es überhaupt Bild-/Aktmarken? Wenn nicht, ist der ganze Text Inhalt.
+            var hatMarken = abs.some(function(a) { return STK_BILD.test((a.text || '').trim()); });
+            var begonnen = !hatMarken, bild = 0;
             abs.forEach(function(a) {
                 var t = (a.text || '').trim();
                 a.typ = 'regie'; a.sprecher = ''; a.bild = bild; a.pruefen = false;
@@ -2007,6 +2024,11 @@
             h += '<span class="wz-muted">.docx · .odt · .html · .md · .txt · .rtf</span>';
             if (stk.name) h += '<span style="flex:1;"></span><b>' + escHtml(stk.name) + '</b>';
             h += '</div>';
+            h += '<div style="margin-top:10px;"><textarea class="wz-ta" id="stk-ta" style="min-height:90px;" '
+               + 'placeholder="… oder Text hier hineinkopieren">' + escHtml(stk.eingefuegt || '') + '</textarea>'
+               + '<div class="wz-row" style="margin-top:6px;">'
+               + '<button class="btn" onclick="stkTextUebernehmen()">📋 Eingefügten Text übernehmen</button>'
+               + '<span class="wz-muted">Für kurze Stücke, einzelne Szenen oder Prosa.</span></div></div>';
             if (stk.stand) h += '<p class="wz-muted" style="margin-top:8px;">' + escHtml(stk.stand) + '</p>';
             h += '</div>';
 
@@ -2038,7 +2060,7 @@
             if (stk.uebernommen) h += '<span class="wz-badge wz-b-f">' + stk.uebernommen + ' Änderungen</span>';
             h += '</div></div>';
 
-            if (!stk.geprueft) { h += stkGermHtml(); h += renderWbGegen(); return h + '</div>'; }
+            if (!stk.geprueft) { h += stkGermHtml(); return h + '</div>'; }
 
             // Umschalter
             h += '<div class="wz-box"><div class="wz-row">';
@@ -2064,8 +2086,6 @@
             h += '<button class="wz-mini grau" onclick="stkSpeichern(\'txt\')">.txt</button>';
             h += '<span class="wz-muted">Es entsteht eine neue Datei, das Original bleibt liegen.</span>';
             h += '</div></div>';
-
-            h += renderWbGegen();
 
             return h + '</div>';
         }
@@ -2425,14 +2445,128 @@
                     if (f.vorschlag) h += '<span class="wz-muted">statt dessen: <b>' + escHtml(f.vorschlag) + '</b></span>';
                     if (f.grund) h += '<span class="wz-muted">' + escHtml(f.grund) + '</span>';
                     h += '<span style="flex:1;"></span>';
+                    h += '<button class="wz-mini grau" onclick="wbgEintragLaden(' + i + ')">' + (f.offenGeklappt ? '▾ Eintrag' : '▸ ganzer Eintrag') + '</button>';
                     h += '<button class="wz-mini grau" onclick="wbgOeffnen(' + i + ')">🔎 im Wörterbuch</button>';
                     h += '<button class="wz-mini grau" onclick="wbgVerwerfen(' + i + ')">behalten</button>';
                     h += '<button class="wz-mini" style="background:var(--danger,#c0392b);" onclick="wbgLoeschen(' + i + ')">löschen</button>';
                     h += '</div>';
                     if (f.synonyme) h += '<div class="wz-muted" style="font-size:12px;margin-left:6px;">Synonyme: ' + escHtml(f.synonyme) + '</div>';
+                    h += wbgFeldHtml(f, i);
                     h += '</div>';
                 });
             }
+            return h + '</div>';
+        }
+
+        /* ═══════════ Wörterbuch-Werkstatt: ganze Einträge ansehen und überarbeiten ═══════════ */
+
+        var WBG_FELDER = ['begriff', 'wortart', 'kategorie', 'synonyme', 'bedeutung', 'beispielsatz',
+                          'bemerkung', 'nebenform', 'reim', 'reim_assonanz', 'nebenform_reim'];
+
+        function wbgEintragLaden(i) {
+            var f = wbg.funde[i]; if (!f) return;
+            if (f.eintrag) { f.offenGeklappt = !f.offenGeklappt; render(); return; }
+            f.laedt = true; render();
+            supabaseCall('woerter?select=*&id=eq.' + encodeURIComponent(f.id) + '&limit=1')
+                .then(function(r) {
+                    f.laedt = false;
+                    f.eintrag = (r && r[0]) || null;
+                    f.offenGeklappt = true;
+                    if (!f.eintrag) showToast('Eintrag nicht gefunden', 'warning');
+                    render();
+                })
+                .catch(function(e) { f.laedt = false; showToast(e.message, 'error'); render(); });
+        }
+
+        function wbgUeberarbeitenPrompt() {
+            return kiRegelPrompt() + '\n\n'
+              + 'AUFGABE: Du bekommst einen vollständigen Wörterbucheintrag als JSON. Bringe ihn auf die Hausnorm.\n'
+              + '- «begriff», «beispielsatz», «nebenform» sind MUNDART und werden nach den Regeln korrigiert.\n'
+              + '- «bemerkung» ist Schweizer Hochdeutsch; darin stehen Mundartzitate in «» – nur diese korrigieren.\n'
+              + '- «synonyme» und «bedeutung» sind Schweizer Hochdeutsch (nie ß) und bleiben inhaltlich, wie sie sind.\n'
+              + '- «reim» ist der Teil ab dem betonten Vokal ohne Anlaut, «reim_assonanz» die Vokalfolge des Reims. '
+              + 'Wenn sich der begriff ändert, müssen beide nachgeführt werden.\n'
+              + '- «kategorie» und «wortart» nicht ändern.\n'
+              + 'Ändere NUR, was gegen eine Regel verstösst. Was in Ordnung ist, bleibt buchstabengetreu stehen.\n\n'
+              + 'ANTWORTE NUR mit einem JSON-Objekt, ohne Vorrede:\n'
+              + '{"aenderungen":{"feld":"neuer Wert", …}, "begruendung":"kurz, ein Satz je Änderung"}\n'
+              + 'Ist nichts zu ändern, gib {"aenderungen":{},"begruendung":"nichts zu ändern"} zurück.';
+        }
+
+        function wbgUeberarbeiten(i) {
+            var f = wbg.funde[i]; if (!f) return;
+            if (!kiBereit()) { showToast('Dafür braucht es einen API-Schlüssel', 'warning'); return; }
+            if (!f.eintrag) { showToast('Zuerst den Eintrag laden', 'warning'); return; }
+            f.arbeitet = true; f.vorschlagFelder = null; render();
+            var daten = {};
+            WBG_FELDER.forEach(function(k) { if (f.eintrag[k]) daten[k] = f.eintrag[k]; });
+            var zusatz = f.auftrag ? ('\n\nZUSÄTZLICHER AUFTRAG VON UELI: ' + f.auftrag) : '';
+            kiFrage(wbgUeberarbeitenPrompt() + zusatz, JSON.stringify(daten, null, 1), 1500, false)
+                .then(function(a) {
+                    f.arbeitet = false;
+                    var m = /\{[\s\S]*\}/.exec(a);
+                    var o = null;
+                    try { o = JSON.parse(m ? m[0] : a); } catch (e) { o = null; }
+                    if (!o || !o.aenderungen) { showToast('Antwort nicht lesbar', 'error'); render(); return; }
+                    var ae = {};
+                    Object.keys(o.aenderungen).forEach(function(k) {
+                        if (WBG_FELDER.indexOf(k) < 0) return;
+                        var neu = String(o.aenderungen[k]);
+                        if (neu !== String(f.eintrag[k] || '')) ae[k] = neu;
+                    });
+                    f.vorschlagFelder = ae;
+                    f.vorschlagGrund = String(o.begruendung || '');
+                    if (!Object.keys(ae).length) showToast('Die KI findet nichts zu ändern', 'success');
+                    render();
+                })
+                .catch(function(e) { f.arbeitet = false; showToast(e.message, 'error'); render(); });
+        }
+
+        function wbgAuftragMerken(i, el) { if (wbg.funde[i]) wbg.funde[i].auftrag = el.value; }
+
+        function wbgSpeichern(i) {
+            var f = wbg.funde[i];
+            if (!f || !f.vorschlagFelder || !Object.keys(f.vorschlagFelder).length) return;
+            var liste = Object.keys(f.vorschlagFelder).map(function(k) {
+                return k + ': «' + (f.eintrag[k] || '') + '» → «' + f.vorschlagFelder[k] + '»';
+            }).join('\n');
+            if (!confirm('Diese Änderungen im Wörterbuch speichern?\n\n' + liste)) return;
+            var daten = {};
+            Object.keys(f.vorschlagFelder).forEach(function(k) { daten[k] = f.vorschlagFelder[k]; });
+            daten.updated_at = new Date().toISOString().slice(0, 10);
+            supabaseCall('woerter?id=eq.' + encodeURIComponent(f.id), { method: 'PATCH', body: daten })
+                .then(function() {
+                    Object.keys(f.vorschlagFelder).forEach(function(k) { f.eintrag[k] = f.vorschlagFelder[k]; });
+                    if (f.vorschlagFelder.begriff) f.begriff = f.vorschlagFelder.begriff;
+                    f.vorschlagFelder = null;
+                    showToast('Eintrag gespeichert', 'success'); render();
+                })
+                .catch(function(e) { showToast('Speichern misslungen: ' + e.message, 'error'); });
+        }
+
+        function wbgFeldHtml(f, i) {
+            if (f.laedt) return '<div class="wz-muted" style="margin:6px 0 0 6px;">Lade Eintrag…</div>';
+            if (!f.eintrag || !f.offenGeklappt) return '';
+            var h = '<div style="margin:8px 0 0 6px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">';
+            h += '<table style="width:100%;font-size:12.5px;border-collapse:collapse;">';
+            WBG_FELDER.forEach(function(k) {
+                var alt = f.eintrag[k]; if (!alt && !(f.vorschlagFelder && f.vorschlagFelder[k])) return;
+                var neu = f.vorschlagFelder ? f.vorschlagFelder[k] : null;
+                h += '<tr><td style="width:120px;vertical-align:top;padding:2px 8px 2px 0;" class="wz-muted">' + k + '</td>';
+                h += '<td style="padding:2px 0;">' + escHtml(String(alt || ''));
+                if (neu) h += '<br><b class="wz-angleich">→ ' + escHtml(neu) + '</b>';
+                h += '</td></tr>';
+            });
+            h += '</table>';
+            h += '<div class="wz-row" style="margin-top:8px;align-items:center;">';
+            h += '<input class="input" style="flex:1;min-width:180px;" placeholder="zusätzlicher Auftrag an die KI (freiwillig)" '
+               + 'value="' + escHtml(f.auftrag || '') + '" oninput="wbgAuftragMerken(' + i + ', this)">';
+            h += '<button class="wz-mini" onclick="wbgUeberarbeiten(' + i + ')"' + (f.arbeitet ? ' disabled' : '') + '>'
+               + (f.arbeitet ? '…' : '🤖 Eintrag überarbeiten') + '</button>';
+            if (f.vorschlagFelder && Object.keys(f.vorschlagFelder).length)
+                h += '<button class="wz-mini" onclick="wbgSpeichern(' + i + ')">💾 Änderungen speichern</button>';
+            h += '</div>';
+            if (f.vorschlagGrund) h += '<div class="wz-muted" style="margin-top:6px;font-size:12px;">' + escHtml(f.vorschlagGrund) + '</div>';
             return h + '</div>';
         }
 
@@ -4661,7 +4795,7 @@
             h += '<div class="wz-box"><h3>🧪 Wörterbuch gegenprüfen</h3>'
                + '<p class="wz-muted">Die Prüfung des Wörterbuchs auf Schreibregeln und auf eingeschlichene '
                + 'Germanismen steht jetzt im Reiter <b>📄 Stück</b>, ganz unten.</p>'
-               + '<button class="btn" onclick="changeAdminTab(\'stueck\')">Dorthin wechseln</button></div>';
+               + '<button class="btn" onclick="changeAdminTab(\'wbgegen\')">Dorthin wechseln</button></div>';
             h += '<div class="wz-box"><h3>📥 Export</h3>'
                + '<button class="btn btn-success" onclick="exportAllCSV()" style="width:100%;padding:12px;">Alle ' + state.totalCount + ' Einträge als CSV</button></div>';
             h += '</div>';
@@ -5858,6 +5992,7 @@
             tabs += '<button class="tab-btn' + (state.adminTab === 'tabelle' ? ' active' : '') + '" onclick="changeAdminTab(\'tabelle\')">Tabelle</button>';
             if (kiBereit()) tabs += '<button class="tab-btn' + (state.adminTab === 'pruefen' ? ' active' : '') + '" onclick="changeAdminTab(\'pruefen\')">🔍 Prüfen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'stueck' ? ' active' : '') + '" onclick="changeAdminTab(\'stueck\')">📄 Stück</button>';
+            tabs += '<button class="tab-btn' + (state.adminTab === 'wbgegen' ? ' active' : '') + '" onclick="changeAdminTab(\'wbgegen\')">🧪 Wörterbuch</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'ki' ? ' active' : '') + '" onclick="changeAdminTab(\'ki\')">🤖 KI</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'uebersetzen' ? ' active' : '') + '" onclick="changeAdminTab(\'uebersetzen\')">📖 Übersetzen</button>';
             tabs += '<button class="tab-btn' + (state.adminTab === 'export' ? ' active' : '') + '" onclick="changeAdminTab(\'export\')">Export</button>';
@@ -5867,6 +6002,7 @@
             if (state.adminTab === 'tabelle') return tabs + renderAdminTable();
             if (state.adminTab === 'pruefen' && !kiBereit()) state.adminTab = 'ki';   // Prüfen braucht die KI
             if (state.adminTab === 'stueck') return tabs + renderStueck();
+            if (state.adminTab === 'wbgegen') return tabs + '<div class="wz-wrap">' + renderWbGegen() + '</div>';
             if (state.adminTab === 'pruefen') return tabs + renderPruefen();
             if (state.adminTab === 'ki') return tabs + renderKI();
             if (state.adminTab === 'werkstatt') { state.adminTab = 'uebersetzen'; }   // alte Werkstatt → Übersetzen
