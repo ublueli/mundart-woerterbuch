@@ -2803,7 +2803,8 @@
             h += '<div class="ki-grid">';
             h += '<div><label class="wz-muted">API-Schlüssel</label>'
                + '<input type="password" class="input" id="ki-key" placeholder="sk-ant-..." value="' + escHtml(k.key) + '"></div>';
-            h += '<div><label class="wz-muted">Modell</label><select class="input" id="ki-modell">';
+            h += '<div><label class="wz-muted">Modell</label><select class="input" id="ki-modell" '
+               + 'onchange="state.ki.modell=this.value;localStorage.setItem(\'mw-modell\',this.value);showToast(\'Modell gewählt: \'+this.options[this.selectedIndex].text,\'success\')">';
             kiModelleAuto();
             var liste = kiModellListe();
             var drin = false;
@@ -2819,7 +2820,8 @@
             h += '<button class="wz-mini grau" onclick="kiModelleLaden()">↻ Modelle laden</button>';
             h += '<button class="wz-mini grau" onclick="kiTest()">✓ Verbindung testen</button>';
             if (k.key) h += '<button class="wz-mini grau" onclick="kiSchluesselLoeschen()">🗑 Schlüssel entfernen</button>';
-            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ki-websuche"' + (k.websuche ? ' checked' : '') + '> Web-Recherche erlauben (kostet extra)</label>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ki-websuche"' + (k.websuche ? ' checked' : '')
+               + ' onchange="state.ki.websuche=this.checked;localStorage.setItem(\'mw-websuche\',this.checked?\'1\':\'0\')"> Web-Recherche erlauben (kostet extra)</label>';
             h += '<span class="ki-status"><span class="ki-dot' + (k.key ? ' on' : '') + '"></span>' + (k.key ? 'bereit' : 'kein Schlüssel') + '</span>';
             h += '</div></div>';
 
