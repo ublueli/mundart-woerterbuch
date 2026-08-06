@@ -6191,6 +6191,35 @@
                 if (da) { showToast('Lokale Brücke gefunden – die KI läuft über dein Claude-Abo', 'success'); render(); }
             });
         }, 300);
+
+        /* Ruf von aussen: #neu=Wort&satz=Beispielsatz
+           So schickt das Google-Docs-Add-on ein unbekanntes Wort herüber, und
+           die Erfassungsmaske geht mit Wort und Satz schon ausgefüllt auf. */
+        function neuAusAdresse() {
+            var h = location.hash || '';
+            if (h.indexOf('neu=') < 0) return;
+            var p = {};
+            h.replace(/^#/, '').split('&').forEach(function(t) {
+                var i = t.indexOf('=');
+                if (i > 0) { try { p[t.slice(0, i)] = decodeURIComponent(t.slice(i + 1).replace(/\+/g, ' ')); } catch (e) {} }
+            });
+            if (!p.neu) return;
+            try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+            var versuche = 0;
+            (function warte() {
+                if (state.isAdmin) {
+                    changeView('admin');
+                    setTimeout(function() { adminNeuerEintrag(p.neu, p.satz || ''); }, 150);
+                    return;
+                }
+                if (++versuche > 60) {
+                    showToast('Für «' + p.neu + '»: zuerst anmelden, dann den Link nochmals öffnen', 'warning');
+                    return;
+                }
+                setTimeout(warte, 500);
+            })();
+        }
+        setTimeout(neuAusAdresse, 700);
         function updateCell(id, field, value) { var data = {}; data[field] = value || null; supabaseCall('woerter?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data) }); }
         function deleteRow(id) { if (!confirm('Löschen?')) return; supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() { showToast('Gelöscht', 'success'); return loadPageData(state.currentPage, state.filter); }).then(function() { loadTotalCount(); render(); }); }
         
