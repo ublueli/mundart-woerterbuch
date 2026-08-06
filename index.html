@@ -4832,8 +4832,93 @@
                + '<button class="btn" onclick="changeAdminTab(\'wbgegen\')">Dorthin wechseln</button></div>';
             h += '<div class="wz-box"><h3>📥 Export</h3>'
                + '<button class="btn btn-success" onclick="exportAllCSV()" style="width:100%;padding:12px;">Alle ' + state.totalCount + ' Einträge als CSV</button></div>';
+
+            h += '<div class="wz-box"><h3>🔤 Rechtschreibdatei für Mac und Word</h3>'
+               + '<p class="wz-muted" style="margin-bottom:8px;">Eine schlichte Wortliste, ein Wort pro Zeile. '
+               + 'Auf dem Mac kommt sie nach <code>~/Library/Spelling/LocalDictionary</code> und gilt dann systemweit – '
+               + 'in Pages, TextEdit und Mail. Word will dieselbe Liste als <code>.dic</code> im UProof-Ordner, '
+               + 'dort aber besser in Häppchen.</p>'
+               + '<div class="wz-row" style="align-items:center;">'
+               + '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;">'
+               + '<input type="radio" name="rsUmfang" value="voll" checked> voll – alle Wortformen aus Stichwort, Nebenform und Beispielsatz</label>'
+               + '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;">'
+               + '<input type="radio" name="rsUmfang" value="schlank"> schlank – nur Stichwörter und Nebenformen</label>'
+               + '</div>'
+               + '<div class="wz-row" style="margin-top:10px;">'
+               + '<button class="btn" onclick="rechtschreibDateiBauen(false)"' + (state.rsLaeuft ? ' disabled' : '') + '>'
+               + (state.rsLaeuft ? '…' : '🍎 LocalDictionary für den Mac') + '</button>'
+               + '<button class="wz-mini grau" onclick="rechtschreibDateiBauen(true)"' + (state.rsLaeuft ? ' disabled' : '') + '>'
+               + '📄 Word: mehrere .dic zu 4500 Zeilen</button>'
+               + '</div>'
+               + (state.rsStand ? '<div class="wz-muted" style="margin-top:8px;">' + escHtml(state.rsStand) + '</div>' : '')
+               + '</div>';
             h += '</div>';
             return h;
+        }
+
+        /* ---- Wortliste für die Rechtschreibprüfung von Mac und Word ---- */
+        function rechtschreibDateiBauen(fuerWord) {
+            var r = document.querySelector('input[name="rsUmfang"]:checked');
+            var voll = !r || r.value === 'voll';
+            state.rsLaeuft = true; state.rsStand = 'Lade Wörterbuch…'; render();
+
+            var alle = [], seite = 1000, ab = 0;
+            function holen() {
+                return supabaseCall('woerter?select=begriff,nebenform,beispielsatz&limit=' + seite + '&offset=' + ab)
+                    .then(function(d) {
+                        if (d && d.length) {
+                            alle = alle.concat(d); ab += seite;
+                            state.rsStand = alle.length + ' Einträge geladen…'; render();
+                            if (d.length === seite) return holen();
+                        }
+                        return alle;
+                    });
+            }
+
+            holen().then(function(rows) {
+                var gesehen = Object.create(null), liste = [];
+                function nimm(w) {
+                    if (!w) return;
+                    w = String(w).replace(/^[^A-Za-zÄÖÜäöü]+|[^A-Za-zÄÖÜäöü]+$/g, '');
+                    if (w.length < 2) return;
+                    if (/^[0-9]+$/.test(w)) return;
+                    var k = w.toLowerCase();
+                    if (gesehen[k]) return;
+                    gesehen[k] = 1; liste.push(w);
+                }
+                rows.forEach(function(z) {
+                    // Mehrwortstichwörter zerlegen: «nume Bahnhof versto» gibt drei Wörter
+                    String(z.begriff || '').split(/[^A-Za-zÄÖÜäöü'’-]+/).forEach(nimm);
+                    String(z.nebenform || '').split(/[^A-Za-zÄÖÜäöü'’-]+/).forEach(nimm);
+                    if (voll) String(z.beispielsatz || '').split(/[^A-Za-zÄÖÜäöü'’-]+/).forEach(nimm);
+                });
+                liste.sort(function(a, b) { return a.localeCompare(b, 'de-CH'); });
+
+                var stamm = 'Mundart-' + (voll ? 'voll' : 'schlank');
+                if (!fuerWord) {
+                    dateiSpeichern(stamm + '-LocalDictionary.txt', liste.join('\n') + '\n');
+                    state.rsStand = liste.length + ' Wörter geschrieben. Datei nach ~/Library/Spelling/LocalDictionary '
+                                  + 'kopieren (ohne Endung!) und die Programme neu starten.';
+                } else {
+                    var proTeil = 4500, teile = Math.ceil(liste.length / proTeil);
+                    for (var i = 0; i < teile; i++)
+                        dateiSpeichern(stamm + '-' + (i + 1) + '-von-' + teile + '.dic',
+                                       liste.slice(i * proTeil, (i + 1) * proTeil).join('\r\n') + '\r\n');
+                    state.rsStand = liste.length + ' Wörter in ' + teile + ' Dateien. Alle in den UProof-Ordner legen '
+                                  + 'und unter Optionen → Dokumentprüfung → Benutzerwörterbücher einzeln hinzufügen.';
+                }
+                state.rsLaeuft = false; render();
+            }).catch(function(e) {
+                state.rsLaeuft = false; state.rsStand = 'Fehler: ' + e.message; render();
+            });
+        }
+
+        function dateiSpeichern(name, text) {
+            var b = new Blob(['﻿' + text], { type: 'text/plain;charset=utf-8' });
+            var a = document.createElement('a');
+            a.href = URL.createObjectURL(b); a.download = name;
+            document.body.appendChild(a); a.click();
+            setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
         }
 
         /* ═══════════ Konsistenzprüfung des Wörterbuchs ═══════════ */
