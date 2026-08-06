@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Schweizer Mundart-Wörterbuch - Vollversion v2.6</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%97%A3%3C/text%3E%3C/svg%3E">
     <style>
         :root {
             --bg-primary: #f9fafb;
@@ -916,15 +917,15 @@
             // Alphabet Navigation
             html += '<div class="alphabet-nav">';
             'ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ'.split('').forEach(function(letter) {
-                html += '<button class="alphabet-btn' + (state.filter.buchstabe.toUpperCase() === letter ? ' active' : '') + '" onclick="filterByBuchstabe(\'' + letter + '\')">' + letter + '</button>';
+                html += '<button class="alphabet-btn' + ((state.filter.buchstabe || '').toUpperCase() === letter ? ' active' : '') + '" onclick="filterByBuchstabe(\'' + letter + '\')">' + letter + '</button>';
             });
             html += '<button class="alphabet-btn' + (!state.filter.buchstabe ? ' active' : '') + '" onclick="filterByBuchstabe(\'\')">Alle</button>';
             html += '</div>';
             
             // Suchbox mit Dropdowns
             html += '<div class="search-box"><div class="search-grid">';
-            html += '<input type="text" id="search-mundart" class="input" placeholder="Mundartbegriff..." value="' + state.filter.mundart + '">';
-            html += '<input type="text" id="search-deutsch" class="input" placeholder="Deutsche Entsprechung..." value="' + state.filter.deutsch + '">';
+            html += '<input type="text" id="search-mundart" class="input" placeholder="Mundartbegriff..." value="' + (state.filter.mundart || '') + '">';
+            html += '<input type="text" id="search-deutsch" class="input" placeholder="Deutsche Entsprechung..." value="' + (state.filter.deutsch || '') + '">';
             
             // Wortart Dropdown
             html += '<select id="search-wortart" class="input" onchange="filterByWortart()"><option value="alle">Alle Wortarten (' + state.wortarten.length + ')</option>';
@@ -2345,8 +2346,16 @@
 
         function wbgOeffnen(i) {
             var f = wbg.funde[i]; if (!f) return;
-            state.filter = f.begriff; state.currentView = 'woerterbuch'; state.currentPage = 1;
-            loadPageData(1, f.begriff).then(render);
+            // Nur das Suchfeld setzen – das Filterobjekt selber muss stehen bleiben,
+            // sonst fehlen den anderen Ansichten ihre Felder.
+            state.filter.mundart   = f.begriff;
+            state.filter.deutsch   = '';
+            state.filter.buchstabe = '';
+            state.filter.wortart   = '';
+            state.filter.kategorie = '';
+            state.currentView = 'woerterbuch';
+            state.currentPage = 1;
+            loadPageData(1, state.filter).then(render);
         }
 
         function renderWbGegen() {
@@ -3980,9 +3989,21 @@
             var k = state.ki;
             var h = '<div class="wz-wrap">';
 
-            // --- Einstellungen ---
-            h += '<div class="wz-box"><h3>⚙️ KI-Einstellungen</h3>';
-            h += '<p class="wz-muted" style="margin-bottom:10px;">Der Schlüssel wird nur in diesem Browser gespeichert und nie an die Website übertragen.</p>';
+            // --- Brücke: die KI läuft übers Abo, kein Schlüssel nötig ---
+            if (BRUECKE.da) {
+                h += '<div class="wz-box" style="border-left:3px solid #3a8;">';
+                h += '<h3>🖥 Die KI läuft über dein Claude-Abo</h3>';
+                h += '<p class="wz-muted" style="margin:0;">Die App läuft als Programm auf diesem Mac. Jede KI-Anfrage geht '
+                   + 'über Claude Code, das hier angemeldet ist – <b>ein API-Schlüssel ist nicht nötig</b>.'
+                   + (BRUECKE.claude ? '<br>Gefunden: ' + escHtml(String(BRUECKE.claude).split('\n')[0]) : '')
+                   + '</p>';
+                h += '<details style="margin-top:10px;"><summary class="wz-muted" style="cursor:pointer;">'
+                   + 'Trotzdem einen Schlüssel hinterlegen – nötig nur für Web-Recherche und freie Modellwahl</summary>'
+                   + '<div style="margin-top:10px;">';
+            } else {
+                h += '<div class="wz-box"><h3>⚙️ KI-Einstellungen</h3>';
+                h += '<p class="wz-muted" style="margin-bottom:10px;">Der Schlüssel wird nur in diesem Browser gespeichert und nie an die Website übertragen.</p>';
+            }
             h += '<div class="ki-grid">';
             h += '<div><label class="wz-muted">API-Schlüssel</label>'
                + '<input type="password" class="input" id="ki-key" placeholder="sk-ant-..." value="' + escHtml(k.key) + '"></div>';
@@ -4005,8 +4026,11 @@
             if (k.key) h += '<button class="wz-mini grau" onclick="kiSchluesselLoeschen()">🗑 Schlüssel entfernen</button>';
             h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="ki-websuche"' + (k.websuche ? ' checked' : '')
                + ' onchange="state.ki.websuche=this.checked;localStorage.setItem(\'mw-websuche\',this.checked?\'1\':\'0\')"> Web-Recherche erlauben (kostet extra)</label>';
-            h += '<span class="ki-status"><span class="ki-dot' + (k.key ? ' on' : '') + '"></span>' + (k.key ? 'bereit' : 'kein Schlüssel') + '</span>';
-            h += '</div></div>';
+            h += '<span class="ki-status"><span class="ki-dot' + (kiBereit() ? ' on' : '') + '"></span>'
+               + (BRUECKE.da ? 'bereit über das Abo' : (k.key ? 'bereit' : 'kein Schlüssel')) + '</span>';
+            h += '</div>';
+            if (BRUECKE.da) h += '</div></details>';
+            h += '</div>';
 
             // --- Textprüfung mit KI ---
             h += '<div class="wz-box"><h3>🤖 Text mit KI prüfen</h3>';
@@ -6222,10 +6246,30 @@
             if (el) el.addEventListener('keypress', function(e) { if (e.key === 'Enter') kiChatSenden(); });
         }
         
+        /* Das Filterobjekt darf nie Löcher haben – sonst stürzt der Aufbau der
+           Seite ab und die ganze App reagiert nicht mehr. */
+        var FILTER_FELDER = { mundart: '', deutsch: '', wortart: '', reim: '',
+                              kategorie: '', buchstabe: '', thesaurus: '', volltext: false };
+        function filterHeilen() {
+            if (!state.filter || typeof state.filter !== 'object') state.filter = {};
+            Object.keys(FILTER_FELDER).forEach(function(k) {
+                if (typeof state.filter[k] === 'undefined' || state.filter[k] === null)
+                    state.filter[k] = FILTER_FELDER[k];
+            });
+        }
+
         function render() {
+            filterHeilen();
             var content = document.getElementById('content');
             var views = { woerterbuch: renderWoerterbuch, reimlexikon: renderReimlexikon, thesaurus: renderThesaurus, bearbeiten: renderBearbeiten, info: renderInfo, login: renderLogin, admin: renderAdmin };
-            content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">?</div>'; })();
+            try {
+                content.innerHTML = (views[state.currentView] || function() { return '<div class="empty">?</div>'; })();
+            } catch (e) {
+                console.error('Aufbau der Ansicht misslungen:', e);
+                content.innerHTML = '<div class="wz-box"><h3>Diese Ansicht liess sich nicht aufbauen</h3>'
+                    + '<p class="wz-muted">' + escHtml(String(e && e.message || e)) + '</p>'
+                    + '<button class="btn" onclick="state.currentView=\'woerterbuch\';render()">Zurück zum Wörterbuch</button></div>';
+            }
             attachEventListeners();
         }
         
