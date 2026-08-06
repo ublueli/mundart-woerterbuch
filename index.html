@@ -2434,7 +2434,211 @@
 
             h += wbgListeHtml('haupt');
             h += wbgListeHtml('satz');
+            h += renderDubletten();
             return h;
+        }
+
+        /* ═══════════ Dubletten zusammenführen ═══════════ */
+
+        var dub = { laeuft: false, stand: '', gruppen: [], fertig: false };
+        var DUB_FELDER = ['begriff', 'wortart', 'kategorie', 'bedeutung', 'synonyme',
+                          'beispielsatz', 'bemerkung', 'nebenform', 'reim', 'reim_assonanz', 'nebenform_reim'];
+        var DUB_META = /(bedeutet im .{0,20}deutschen|hat im .{0,20}deutschen|Das Wort «|Hauptbedeutungen|folgende Bedeutung|hat folgende)/i;
+
+        function dublettenSuchen() {
+            dub.laeuft = true; dub.stand = 'Lade Wörterbuch…'; dub.gruppen = []; dub.fertig = false; render();
+            var alle = [], seite = 1000, ab = 0;
+            function holen() {
+                return supabaseCall('woerter?select=*&limit=' + seite + '&offset=' + ab + '&order=id.asc')
+                    .then(function(d) {
+                        if (d && d.length) {
+                            alle = alle.concat(d); ab += seite;
+                            dub.stand = alle.length + ' geladen…'; render();
+                            if (d.length === seite) return holen();
+                        }
+                        return alle;
+                    });
+            }
+            holen().then(function(rows) {
+                var nach = {};
+                rows.forEach(function(r) {
+                    var k = String(r.begriff || '').trim().toLowerCase();
+                    if (!k) return;
+                    (nach[k] = nach[k] || []).push(r);
+                });
+                var g = [];
+                Object.keys(nach).forEach(function(k) {
+                    var e = nach[k];
+                    if (e.length < 2) return;
+                    var schreibungen = {};
+                    e.forEach(function(x) { schreibungen[String(x.begriff).trim()] = 1; });
+                    var gruppe = {
+                        schluessel: k, eintraege: e, offen: true,
+                        warnung: Object.keys(schreibungen).length > 1
+                            ? 'Schreibweise verschieden (' + Object.keys(schreibungen).join(' / ')
+                              + ') – vielleicht zwei verschiedene Wörter'
+                            : null,
+                        wahl: {}
+                    };
+                    DUB_FELDER.forEach(function(f) { gruppe.wahl[f] = dubStandardWahl(gruppe, f); });
+                    g.push(gruppe);
+                });
+                // Die heiklen zuletzt
+                g.sort(function(a, b) {
+                    if (!!a.warnung !== !!b.warnung) return a.warnung ? 1 : -1;
+                    return a.schluessel.localeCompare(b.schluessel, 'de-CH');
+                });
+                dub.gruppen = g; dub.fertig = true; dub.laeuft = false;
+                var ueber = 0; g.forEach(function(x) { ueber += x.eintraege.length - 1; });
+                dub.stand = g.length + ' Gruppen, ' + ueber + ' überzählige Einträge. '
+                          + g.filter(function(x) { return x.warnung; }).length + ' davon mit verschiedener Schreibweise.';
+                render();
+            }).catch(function(e) { dub.laeuft = false; dub.stand = 'Fehler: ' + e.message; render(); });
+        }
+
+        /* Welcher Eintrag gewinnt bei welchem Feld? -1 heisst «alle vereinigen». */
+        function dubStandardWahl(g, feld) {
+            var mit = [];
+            g.eintraege.forEach(function(e, i) { if (String(e[feld] || '').trim()) mit.push(i); });
+            if (!mit.length) return 0;
+            if (feld === 'synonyme') return -1;
+            if (feld === 'bedeutung') {
+                // Die kürzeste, die nicht über das Wort redet, sondern es erklärt
+                var ohneMeta = mit.filter(function(i) { return !DUB_META.test(String(g.eintraege[i].bedeutung)); });
+                var kandidaten = ohneMeta.length ? ohneMeta : mit;
+                kandidaten.sort(function(a, b) {
+                    return String(g.eintraege[a].bedeutung).length - String(g.eintraege[b].bedeutung).length;
+                });
+                return kandidaten[0];
+            }
+            if (feld === 'wortart') {
+                var genau = mit.filter(function(i) { return /\(/.test(String(g.eintraege[i].wortart)); });
+                return genau.length ? genau[0] : mit[0];
+            }
+            if (feld === 'beispielsatz') {
+                var s = mit.slice();
+                s.sort(function(a, b) {
+                    return String(g.eintraege[b].beispielsatz).length - String(g.eintraege[a].beispielsatz).length;
+                });
+                return s[0];
+            }
+            return mit[0];
+        }
+
+        function dubSynonymeVereint(g) {
+            var gesehen = Object.create(null), raus = [];
+            g.eintraege.forEach(function(e) {
+                String(e.synonyme || '').split(',').forEach(function(s) {
+                    s = s.trim(); if (!s) return;
+                    var k = s.toLowerCase();
+                    if (gesehen[k]) return;
+                    gesehen[k] = 1; raus.push(s);
+                });
+            });
+            return raus.join(', ');
+        }
+
+        function dubWert(g, feld) {
+            var w = g.wahl[feld];
+            if (feld === 'synonyme' && w === -1) return dubSynonymeVereint(g);
+            var e = g.eintraege[w];
+            return e ? String(e[feld] || '') : '';
+        }
+
+        function dubWaehlen(gi, feld, i) {
+            if (dub.gruppen[gi]) { dub.gruppen[gi].wahl[feld] = Number(i); render(); }
+        }
+
+        function dubVerwerfen(gi) { if (dub.gruppen[gi]) { dub.gruppen[gi].offen = false; render(); } }
+
+        function dubZusammenfuehren(gi) {
+            var g = dub.gruppen[gi]; if (!g) return;
+            var bleibt = g.eintraege[0];                      // kleinste id – der älteste Eintrag
+            var weg = g.eintraege.slice(1);
+            var daten = {};
+            DUB_FELDER.forEach(function(f) { daten[f] = dubWert(g, f) || null; });
+            daten.updated_at = new Date().toISOString().slice(0, 10);
+
+            var text = 'Zusammenführen von «' + g.eintraege[0].begriff + '»\n\n'
+                     + 'Bleibt: Eintrag ' + bleibt.id + '\n'
+                     + 'Wird GELÖSCHT: ' + weg.map(function(e) { return e.id; }).join(', ') + '\n\n'
+                     + DUB_FELDER.filter(function(f) { return daten[f]; })
+                         .map(function(f) { return f + ': ' + String(daten[f]).slice(0, 90); }).join('\n');
+            if (!confirm(text)) return;
+
+            supabaseCall('woerter?id=eq.' + encodeURIComponent(bleibt.id), { method: 'PATCH', body: daten })
+                .then(function() {
+                    return Promise.all(weg.map(function(e) {
+                        return supabaseCall('woerter?id=eq.' + encodeURIComponent(e.id), { method: 'DELETE' });
+                    }));
+                })
+                .then(function() {
+                    g.offen = false;
+                    showToast('«' + bleibt.begriff + '» zusammengeführt, ' + weg.length + ' Eintrag/Einträge gelöscht', 'success');
+                    render();
+                })
+                .catch(function(e) { showToast('Misslungen: ' + e.message, 'error'); });
+        }
+
+        function renderDubletten() {
+            var offen = dub.gruppen.filter(function(g) { return g.offen; });
+            var h = '<div class="wz-box" style="margin-top:14px;border-left:3px solid #e8a33d;">';
+            h += '<h3>👯 Dubletten zusammenführen</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Sucht Stichwörter, die mehrfach vorkommen. '
+               + 'Für jedes Feld, in dem sich die Einträge unterscheiden, wählst du, welcher Wert gilt. '
+               + 'Die Synonyme werden standardmässig vereinigt. Gelöscht wird erst nach ausdrücklicher Bestätigung.</p>';
+            h += '<div class="wz-row"><button class="btn" onclick="dublettenSuchen()"' + (dub.laeuft ? ' disabled' : '') + '>'
+               + (dub.laeuft ? '…' : '🔍 Dubletten suchen') + '</button>';
+            if (dub.stand) h += '<span class="wz-muted">' + escHtml(dub.stand) + '</span>';
+            h += '</div>';
+
+            if (!dub.fertig) return h + '</div>';
+            if (!offen.length) return h + '<div class="wz-muted" style="margin-top:10px;">Nichts offen.</div></div>';
+
+            dub.gruppen.forEach(function(g, gi) {
+                if (!g.offen) return;
+                h += '<div style="border-top:1px solid var(--border-color);padding:10px 0;">';
+                h += '<div class="wz-row" style="align-items:center;"><b style="font-size:15px;">'
+                   + escHtml(g.eintraege[0].begriff) + '</b>'
+                   + '<span class="wz-muted">' + g.eintraege.length + ' Einträge · '
+                   + g.eintraege.map(function(e) { return e.id; }).join(', ') + '</span>';
+                if (g.warnung) h += '<span class="wz-angleich" style="font-size:12px;">⚠ ' + escHtml(g.warnung) + '</span>';
+                h += '<span style="flex:1;"></span>'
+                   + '<button class="wz-mini" onclick="dubZusammenfuehren(' + gi + ')">🔗 Zusammenführen</button>'
+                   + '<button class="wz-mini grau" onclick="dubVerwerfen(' + gi + ')">sind verschieden</button>'
+                   + '</div>';
+
+                DUB_FELDER.forEach(function(f) {
+                    var werte = g.eintraege.map(function(e) { return String(e[f] || '').trim(); });
+                    var eindeutig = {}; werte.forEach(function(w) { if (w) eindeutig[w] = 1; });
+                    var anzahl = Object.keys(eindeutig).length;
+                    if (anzahl === 0) return;
+                    if (anzahl === 1 && f !== 'synonyme') return;       // gleich – nichts zu wählen
+
+                    h += '<div style="margin:6px 0 0 6px;">'
+                       + '<span class="wz-muted" style="display:inline-block;width:120px;vertical-align:top;">' + f + '</span>';
+                    h += '<span style="display:inline-block;width:calc(100% - 130px);vertical-align:top;">';
+                    if (f === 'synonyme') {
+                        h += '<label style="display:block;cursor:pointer;margin-bottom:3px;">'
+                           + '<input type="radio" name="dub' + gi + f + '"' + (g.wahl[f] === -1 ? ' checked' : '')
+                           + ' onchange="dubWaehlen(' + gi + ',\'' + f + '\',-1)"> '
+                           + '<b>alle vereinigt:</b> ' + escHtml(dubSynonymeVereint(g)) + '</label>';
+                    }
+                    g.eintraege.forEach(function(e, i) {
+                        var v = String(e[f] || '').trim(); if (!v) return;
+                        h += '<label style="display:block;cursor:pointer;margin-bottom:3px;">'
+                           + '<input type="radio" name="dub' + gi + f + '"' + (g.wahl[f] === i ? ' checked' : '')
+                           + ' onchange="dubWaehlen(' + gi + ',\'' + f + '\',' + i + ')"> '
+                           + '<span class="wz-muted">' + e.id + ':</span> '
+                           + escHtml(v.length > 220 ? v.slice(0, 220) + '…' : v)
+                           + (f === 'bedeutung' && DUB_META.test(v) ? ' <span class="wz-angleich" style="font-size:11px;">redet über das Wort</span>' : '')
+                           + '</label>';
+                    });
+                    h += '</span></div>';
+                });
+                h += '</div>';
+            });
+            return h + '</div>';
         }
 
         /* ═══════════ Wörterbuch-Werkstatt: ganze Einträge ansehen und überarbeiten ═══════════ */
