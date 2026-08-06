@@ -1783,11 +1783,13 @@
                                              text: f.text, vorschlag: f.vorschlag, offen: true, satz: stkSatzUm(text, pos) });
                             });
                             if (!fs.length && stk.germStufe !== 'aus' && !pruefIstBekannt(t, bekannt)) {
-                                var aehn = pruefAehnlich(t);
+                                // pruefAehnlich liefert ein Objekt {vorschlag, abstand}, keinen Text.
+                                var ao = pruefAehnlich(t);
+                                var aehn = (ao && ao.vorschlag) ? String(ao.vorschlag) : '';
                                 funde.push({ abs: a.nr, wort: t, art: aehn ? 'aehnlich' : 'neu',
                                              regel: aehn ? 'Schreibweise?' : 'unbekannt',
-                                             text: aehn ? ('ähnlich wie «' + aehn + '»') : 'steht nicht im Wörterbuch',
-                                             vorschlag: aehn || '', offen: true, satz: stkSatzUm(text, pos) });
+                                             text: aehn ? ('im Wörterbuch steht «' + aehn + '»') : 'steht nicht im Wörterbuch',
+                                             vorschlag: aehn, offen: true, satz: stkSatzUm(text, pos) });
                             }
                         }
                         pos += t.length;
@@ -1825,6 +1827,10 @@
 
         function stkErsetzen(absNr, wort, neu) {
             var a = stk.abs[absNr]; if (!a) return 0;
+            // Sicherung: nie ein Objekt in den Text schreiben.
+            if (neu && typeof neu === 'object') neu = neu.vorschlag || '';
+            neu = String(neu == null ? '' : neu);
+            if (!neu || /\[object/.test(neu)) { console.warn('Ersetzung verworfen:', wort, neu); return 0; }
             var rx = new RegExp('(?<![A-Za-zÄÖÜäöü])' + wort.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-zÄÖÜäöü])');
             // auf dem zusammengesetzten Text rechnen, damit über Runs verteilte Wörter erwischt werden
             var voll = a.runs.map(function(r) { return r.text; }).join('');
@@ -2342,7 +2348,14 @@
 
         var wbg = { laeuft: false, stand: '', funde: [], fertig: false, geprueft: 0 };
 
-        function wbgVerwerfen(i) { if (wbg.funde[i]) { wbg.funde[i].offen = false; render(); } }
+        function wbgVerwerfen(i, teil) {
+            var f = wbg.funde[i]; if (!f) return;
+            if (teil === 'satz') f.offenSatz = false;
+            else if (teil === 'haupt') f.offenHaupt = false;
+            else { f.offenHaupt = false; f.offenSatz = false; }
+            if (f.offenGeklappt === teil) f.offenGeklappt = null;
+            render();
+        }
 
         function wbgOeffnen(i) {
             var f = wbg.funde[i]; if (!f) return;
@@ -2358,42 +2371,70 @@
             loadPageData(1, state.filter).then(render);
         }
 
+        /* Eine Fundstellenliste – einmal für die Haupteinträge, einmal für die Beispielsätze. */
+        function wbgListeHtml(teil) {
+            var istHaupt = teil === 'haupt';
+            var offen = wbg.funde.filter(function(f) {
+                return (istHaupt ? f.offenHaupt : f.offenSatz)
+                    && ((istHaupt ? f.hauptRegeln : f.satzRegeln) || []).length;
+            });
+
+            var h = '<div class="wz-box" style="margin-top:14px;border-left:3px solid ' + (istHaupt ? '#c33' : '#89a') + ';">';
+            h += '<h3>' + (istHaupt ? '📕 Haupteinträge' : '💬 Beispielsätze') + ' – ' + offen.length + ' Einträge</h3>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">'
+               + (istHaupt
+                  ? 'Stichwort und Nebenform. Hier muss die Hausnorm gelten – was hier steht, ist der Massstab für alles andere.'
+                  : 'Nur die Beispielsätze. Sie dürfen regional gefärbt sein; nicht jede Fundstelle ist ein Fehler. Im Zweifel stehen lassen.')
+               + '</p>';
+
+            if (!wbg.fertig) return h + '<div class="wz-muted">Noch nicht geprüft.</div></div>';
+            if (!offen.length) return h + '<div class="wz-muted">Nichts offen.</div></div>';
+
+            h += '<p class="wz-muted"><b>Gespeichert wird nur, was du ausdrücklich bestätigst.</b></p>';
+            wbg.funde.forEach(function(f, i) {
+                if (istHaupt ? !f.offenHaupt : !f.offenSatz) return;
+                var regeln = (istHaupt ? f.hauptRegeln : f.satzRegeln) || [];
+                if (!regeln.length) return;
+                h += '<div style="border-top:1px solid var(--border-color);padding:8px 0;">';
+                h += '<div class="wz-row" style="align-items:center;">';
+                h += '<b>' + escHtml(f.begriff) + '</b>';
+                regeln.slice(0, 6).forEach(function(r) {
+                    h += '<span class="wz-muted">' + escHtml(r.wort) + ' [' + escHtml(r.regel) + ']'
+                       + (r.vorschlag ? ' → <b>' + escHtml(r.vorschlag) + '</b>' : '')
+                       + ' <i>(' + escHtml(r.feld) + ')</i></span>';
+                });
+                if (regeln.length > 6) h += '<span class="wz-muted">… und ' + (regeln.length - 6) + ' weitere</span>';
+                // Kreuzhinweis: steht derselbe Eintrag auch in der anderen Liste?
+                var andere = (istHaupt ? f.satzRegeln : f.hauptRegeln) || [];
+                if (andere.length) h += '<span class="wz-muted" style="font-style:italic;">(auch '
+                    + (istHaupt ? 'im Beispielsatz' : 'im Haupteintrag') + ': ' + andere.length + ')</span>';
+                h += '<span style="flex:1;"></span>';
+                h += '<button class="wz-mini grau" onclick="wbgEintragLaden(' + i + ',\'' + teil + '\')">'
+                   + (f.offenGeklappt === teil ? '▾ Eintrag' : '▸ ganzer Eintrag') + '</button>';
+                h += '<button class="wz-mini grau" onclick="wbgOeffnen(' + i + ')">🔎 im Wörterbuch</button>';
+                h += '<button class="wz-mini grau" onclick="wbgVerwerfen(' + i + ',\'' + teil + '\')">erledigt</button>';
+                h += '</div>';
+                if (f.offenGeklappt === teil) h += wbgFeldHtml(f, i, teil);
+                h += '</div>';
+            });
+            return h + '</div>';
+        }
+
         function renderWbGegen() {
             var h = '<div class="wz-box"><h3>🧪 Wörterbuch gegenprüfen</h3>';
-            h += '<p class="wz-muted" style="margin-bottom:8px;">Prüft alle Stichwörter und Beispielsätze gegen die '
-               + 'Schreibregeln. Zu jedem Treffer kannst du den ganzen Eintrag aufklappen und ihn von der KI '
-               + 'auf die Hausnorm bringen lassen – auch Beispielsatz, Bemerkung und Reim.</p>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Prüft das Wörterbuch gegen die Schreibregeln – '
+               + 'getrennt nach Haupteintrag und Beispielsatz. Zu jedem Treffer lässt sich der ganze Eintrag '
+               + 'aufklappen und von der KI auf die Hausnorm bringen.</p>';
             h += '<div class="wz-row">';
             h += '<button class="btn" onclick="konsistenzPruefen()">📏 Schreibregeln prüfen</button>';
             if (wbg.stand) h += '<span class="wz-muted">' + escHtml(wbg.stand) + '</span>';
             h += '</div>';
             h += '<div id="konsi-out" style="margin-top:12px;"></div>';
+            h += '</div>';
 
-            var offen = wbg.funde.filter(function(f) { return f.offen; });
-            if (offen.length) {
-                h += '<p class="wz-muted" style="margin-top:12px;"><b>' + offen.length + ' Einträge mit Fundstellen.</b> '
-                   + 'Gespeichert wird nur, was du ausdrücklich bestätigst.</p>';
-                wbg.funde.forEach(function(f, i) {
-                    if (!f.offen) return;
-                    h += '<div style="border-top:1px solid var(--border-color);padding:8px 0;">';
-                    h += '<div class="wz-row" style="align-items:center;">';
-                    h += '<b>' + escHtml(f.begriff) + '</b>';
-                    (f.regeln || []).slice(0, 6).forEach(function(r) {
-                        h += '<span class="wz-muted">' + escHtml(r.wort) + ' [' + escHtml(r.regel) + ']'
-                           + (r.vorschlag ? ' → <b>' + escHtml(r.vorschlag) + '</b>' : '')
-                           + ' <i>(' + escHtml(r.feld) + ')</i></span>';
-                    });
-                    if ((f.regeln || []).length > 6) h += '<span class="wz-muted">…</span>';
-                    h += '<span style="flex:1;"></span>';
-                    h += '<button class="wz-mini grau" onclick="wbgEintragLaden(' + i + ')">' + (f.offenGeklappt ? '▾ Eintrag' : '▸ ganzer Eintrag') + '</button>';
-                    h += '<button class="wz-mini grau" onclick="wbgOeffnen(' + i + ')">🔎 im Wörterbuch</button>';
-                    h += '<button class="wz-mini grau" onclick="wbgVerwerfen(' + i + ')">erledigt</button>';
-                    h += '</div>';
-                    h += wbgFeldHtml(f, i);
-                    h += '</div>';
-                });
-            }
-            return h + '</div>';
+            h += wbgListeHtml('haupt');
+            h += wbgListeHtml('satz');
+            return h;
         }
 
         /* ═══════════ Wörterbuch-Werkstatt: ganze Einträge ansehen und überarbeiten ═══════════ */
@@ -2401,15 +2442,16 @@
         var WBG_FELDER = ['begriff', 'wortart', 'kategorie', 'synonyme', 'bedeutung', 'beispielsatz',
                           'bemerkung', 'nebenform', 'reim', 'reim_assonanz', 'nebenform_reim'];
 
-        function wbgEintragLaden(i) {
+        function wbgEintragLaden(i, teil) {
             var f = wbg.funde[i]; if (!f) return;
-            if (f.eintrag) { f.offenGeklappt = !f.offenGeklappt; render(); return; }
-            f.laedt = true; render();
+            teil = teil || 'haupt';
+            if (f.eintrag) { f.offenGeklappt = (f.offenGeklappt === teil) ? null : teil; render(); return; }
+            f.laedt = teil; render();
             supabaseCall('woerter?select=*&id=eq.' + encodeURIComponent(f.id) + '&limit=1')
                 .then(function(r) {
                     f.laedt = false;
                     f.eintrag = (r && r[0]) || null;
-                    f.offenGeklappt = true;
+                    f.offenGeklappt = teil;
                     if (!f.eintrag) showToast('Eintrag nicht gefunden', 'warning');
                     render();
                 })
@@ -2431,14 +2473,22 @@
               + 'Ist nichts zu ändern, gib {"aenderungen":{},"begruendung":"nichts zu ändern"} zurück.';
         }
 
-        function wbgUeberarbeiten(i) {
+        function wbgUeberarbeiten(i, teil) {
             var f = wbg.funde[i]; if (!f) return;
             if (!kiBereit()) { showToast('Dafür braucht es einen API-Schlüssel', 'warning'); return; }
             if (!f.eintrag) { showToast('Zuerst den Eintrag laden', 'warning'); return; }
             f.arbeitet = true; f.vorschlagFelder = null; render();
             var daten = {};
             WBG_FELDER.forEach(function(k) { if (f.eintrag[k]) daten[k] = f.eintrag[k]; });
-            var zusatz = f.auftrag ? ('\n\nZUSÄTZLICHER AUFTRAG VON UELI: ' + f.auftrag) : '';
+            // Der Bereich bestimmt, was die KI überhaupt anfassen darf.
+            var bereich = teil === 'satz'
+                ? '\n\nBEREICH: Beispielsätze. Ändere AUSSCHLIESSLICH «beispielsatz». '
+                  + '«begriff», «nebenform», «reim», «reim_assonanz» und «nebenform_reim» bleiben unverändert stehen, '
+                  + 'auch wenn sie dir auffällig scheinen. Beispielsätze dürfen regional gefärbt sein: '
+                  + 'Ändere nur, was gegen eine ausdrückliche Schreibregel verstösst, nicht die Wortwahl.'
+                : '\n\nBEREICH: Haupteintrag. Ändere «begriff» und «nebenform» und führe «reim», «reim_assonanz» '
+                  + 'und «nebenform_reim» nach. «beispielsatz» und «bemerkung» bleiben unverändert stehen.';
+            var zusatz = bereich + (f.auftrag ? ('\n\nZUSÄTZLICHER AUFTRAG VON UELI: ' + f.auftrag) : '');
             kiFrage(wbgUeberarbeitenPrompt() + zusatz, JSON.stringify(daten, null, 1), 1500, false)
                 .then(function(a) {
                     f.arbeitet = false;
@@ -2482,10 +2532,13 @@
                 .catch(function(e) { showToast('Speichern misslungen: ' + e.message, 'error'); });
         }
 
-        function wbgFeldHtml(f, i) {
+        function wbgFeldHtml(f, i, teil) {
             if (f.laedt) return '<div class="wz-muted" style="margin:6px 0 0 6px;">Lade Eintrag…</div>';
             if (!f.eintrag || !f.offenGeklappt) return '';
             var h = '<div style="margin:8px 0 0 6px;padding:8px;background:var(--bg-tertiary);border-radius:6px;">';
+            if (teil === 'satz') h += '<div class="wz-muted" style="margin-bottom:6px;font-size:12px;">'
+                + 'Du bist im Bereich Beispielsätze. Regionale Färbung ist erlaubt – ändere nur, was wirklich '
+                + 'gegen die Norm verstösst.</div>';
             h += '<table style="width:100%;font-size:12.5px;border-collapse:collapse;">';
             WBG_FELDER.forEach(function(k) {
                 var alt = f.eintrag[k]; if (!alt && !(f.vorschlagFelder && f.vorschlagFelder[k])) return;
@@ -2499,8 +2552,8 @@
             h += '<div class="wz-row" style="margin-top:8px;align-items:center;">';
             h += '<input class="input" style="flex:1;min-width:180px;" placeholder="zusätzlicher Auftrag an die KI (freiwillig)" '
                + 'value="' + escHtml(f.auftrag || '') + '" oninput="wbgAuftragMerken(' + i + ', this)">';
-            h += '<button class="wz-mini" onclick="wbgUeberarbeiten(' + i + ')"' + (f.arbeitet ? ' disabled' : '') + '>'
-               + (f.arbeitet ? '…' : '🤖 Eintrag überarbeiten') + '</button>';
+            h += '<button class="wz-mini" onclick="wbgUeberarbeiten(' + i + ',\'' + (teil || 'haupt') + '\')"' + (f.arbeitet ? ' disabled' : '') + '>'
+               + (f.arbeitet ? '…' : (teil === 'satz' ? '🤖 Beispielsatz überarbeiten' : '🤖 Haupteintrag überarbeiten')) + '</button>';
             if (f.vorschlagFelder && Object.keys(f.vorschlagFelder).length)
                 h += '<button class="wz-mini" onclick="wbgSpeichern(' + i + ')">💾 Änderungen speichern</button>';
             h += '</div>';
@@ -4788,22 +4841,28 @@
             wbg.stand = 'Lade Wörterbuch…'; wbg.funde = []; wbg.fertig = false; render();
             var alle = [], pageSize = 1000, offset = 0;
             function batch() {
-                return supabaseCall('woerter?select=id,begriff,beispielsatz&limit=' + pageSize + '&offset=' + offset).then(function(d) {
+                return supabaseCall('woerter?select=id,begriff,nebenform,beispielsatz&limit=' + pageSize + '&offset=' + offset).then(function(d) {
                     if (d && d.length) { alle = alle.concat(d); offset += pageSize; if (d.length === pageSize) return batch(); }
                     return alle;
                 });
             }
             batch().then(function(rows) {
+                // Zwei getrennte Welten: Der Haupteintrag muss der Hausnorm folgen,
+                // die Beispielsätze dürfen regional gefärbt sein.
+                var HAUPT = ['begriff', 'nebenform'];
+                var SATZ  = ['beispielsatz'];
                 var treffer = [];
                 rows.forEach(function(r) {
-                    ['begriff','beispielsatz'].forEach(function(feld) {
+                    HAUPT.concat(SATZ).forEach(function(feld) {
                         var v = r[feld]; if (!v) return;
+                        var teil = HAUPT.indexOf(feld) >= 0 ? 'haupt' : 'satz';
                         String(v).split(/[^A-Za-zÄÖÜäöüßé'’´`-]+/).forEach(function(w) {
                             if (!w || w.length < 2) return;
                             var f = regelPruefeWort(w);
                             f.forEach(function(x) {
                                 if (x.art === 'hinweis') return;   // zu viele Fehlalarme
-                                treffer.push({ id: r.id, begriff: r.begriff, feld: feld, wort: w, regel: x.regel, vorschlag: x.vorschlag });
+                                treffer.push({ id: r.id, begriff: r.begriff, feld: feld, teil: teil,
+                                               wort: w, regel: x.regel, vorschlag: x.vorschlag });
                             });
                         });
                     });
@@ -4811,14 +4870,27 @@
                 // nach Eintrag bündeln, damit man den ganzen Datensatz überarbeiten kann
                 var proEintrag = {};
                 treffer.forEach(function(t) {
-                    var e = proEintrag[t.id] || (proEintrag[t.id] = { id: t.id, begriff: t.begriff, offen: true, regeln: [] });
-                    e.regeln.push({ wort: t.wort, regel: t.regel, vorschlag: t.vorschlag, feld: t.feld });
+                    var e = proEintrag[t.id] || (proEintrag[t.id] = { id: t.id, begriff: t.begriff,
+                                                    offenHaupt: true, offenSatz: true,
+                                                    hauptRegeln: [], satzRegeln: [], regeln: [] });
+                    var r = { wort: t.wort, regel: t.regel, vorschlag: t.vorschlag, feld: t.feld };
+                    e.regeln.push(r);
+                    (t.teil === 'haupt' ? e.hauptRegeln : e.satzRegeln).push(r);
                 });
                 wbg.funde = Object.keys(proEintrag).map(function(k) { return proEintrag[k]; })
                     .sort(function(a, b) { return b.regeln.length - a.regeln.length; });
                 wbg.fertig = true;
-                wbg.stand = treffer.length + ' Fundstellen in ' + wbg.funde.length + ' von ' + rows.length + ' Einträgen';
-                if (!treffer.length) wbg.stand = '✓ Keine Regelverstösse in ' + rows.length + ' Einträgen';
+
+                var nH = 0, nS = 0, eH = 0, eS = 0;
+                wbg.funde.forEach(function(f) {
+                    nH += f.hauptRegeln.length; nS += f.satzRegeln.length;
+                    if (f.hauptRegeln.length) eH++;
+                    if (f.satzRegeln.length) eS++;
+                });
+                wbg.zahlen = { nH: nH, nS: nS, eH: eH, eS: eS, rows: rows.length };
+                wbg.stand = treffer.length
+                    ? (nH + ' im Haupteintrag (' + eH + ' Einträge), ' + nS + ' im Beispielsatz (' + eS + ' Einträge), geprüft: ' + rows.length)
+                    : ('✓ Keine Regelverstösse in ' + rows.length + ' Einträgen');
                 render();
             }).catch(function(e) { wbg.stand = 'Fehler: ' + e.message; render(); });
         }
