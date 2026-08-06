@@ -2341,68 +2341,6 @@
 
         var wbg = { laeuft: false, stand: '', funde: [], fertig: false, geprueft: 0 };
 
-        function wbgPrompt() {
-            return kiRegelPrompt() + '\n\n'
-              + 'AUFGABE: Du bekommst Stichwörter aus einem Schweizer Mundart-Wörterbuch. '
-              + 'Finde jene, die GAR KEINE Mundartwörter sind, sondern hochdeutsche Wörter, die versehentlich '
-              + 'aufgenommen wurden – und für die es ein echtes Mundartwort gäbe.\n'
-              + 'KEINE Treffer sind: Wörter, die Mundart und Hochdeutsch seit je teilen; Fremdwörter; '
-              + 'Eigennamen; Fachbegriffe; Wörter, die zwar deutsch aussehen, aber in der Mundart genau so heissen.\n'
-              + 'Melde nur, was du wirklich für einen Fremdkörper hältst. Im Zweifel nichts melden.\n\n'
-              + 'ANTWORTE NUR mit einem JSON-Array, ohne Vorrede:\n'
-              + '[{"w":"Stichwort","v":"Mundartwort, das es stattdessen gäbe","g":"Begründung, max. 8 Wörter"}]';
-        }
-
-        function wbgPruefen() {
-            if (!kiBereit()) { showToast('Dafür braucht es einen API-Schlüssel im KI-Reiter', 'warning'); return; }
-            wbg.laeuft = true; wbg.funde = []; wbg.fertig = false; wbg.geprueft = 0;
-            wbg.stand = 'Lade Wörterbuch…'; render();
-            var alle = [], seite = 0;
-            function laden() {
-                return supabaseCall('woerter?select=id,begriff,wortart,synonyme&order=begriff&limit=1000&offset=' + (seite * 1000))
-                    .then(function(r) {
-                        r = r || [];
-                        r.forEach(function(x) { alle.push(x); });
-                        seite++;
-                        wbg.stand = alle.length + ' Einträge geladen…'; render();
-                        return r.length === 1000 ? laden() : alle;
-                    });
-            }
-            laden().then(function(liste) {
-                var pakete = [];
-                for (var i = 0; i < liste.length; i += 120) pakete.push(liste.slice(i, i + 120));
-                var kette = Promise.resolve();
-                pakete.forEach(function(p, i) {
-                    kette = kette.then(function() {
-                        var txt = p.map(function(e) {
-                            return e.begriff + (e.wortart ? ' (' + e.wortart + ')' : '') + (e.synonyme ? ' = ' + e.synonyme : '');
-                        }).join('\n');
-                        return kiFrage(wbgPrompt(), txt, 1500, false).then(function(a) {
-                            var arr = pruefKiJsonArray(a) || [];
-                            arr.forEach(function(o) {
-                                if (!o || !o.w) return;
-                                var tref = null;
-                                p.forEach(function(e) { if (!tref && (e.begriff || '').toLowerCase() === String(o.w).toLowerCase()) tref = e; });
-                                if (tref) wbg.funde.push({ id: tref.id, begriff: tref.begriff, wortart: tref.wortart || '',
-                                                           synonyme: tref.synonyme || '', vorschlag: String(o.v || ''),
-                                                           grund: String(o.g || ''), offen: true });
-                            });
-                            wbg.geprueft += p.length;
-                            wbg.stand = wbg.geprueft + ' von ' + liste.length + ' geprüft · ' + wbg.funde.length + ' verdächtig';
-                            render();
-                        });
-                    });
-                });
-                return kette;
-            }).then(function() {
-                wbg.laeuft = false; wbg.fertig = true; wbg.stand = '';
-                render(); showToast(wbg.funde.length + ' verdächtige Einträge', 'success');
-            }).catch(function(e) {
-                wbg.laeuft = false; wbg.stand = '';
-                showToast('Gegenprüfung: ' + e.message, 'error'); render();
-            });
-        }
-
         function wbgVerwerfen(i) { if (wbg.funde[i]) { wbg.funde[i].offen = false; render(); } }
 
         function wbgOeffnen(i) {
@@ -2411,46 +2349,37 @@
             loadPageData(1, f.begriff).then(render);
         }
 
-        function wbgLoeschen(i) {
-            var f = wbg.funde[i]; if (!f) return;
-            if (!confirm('Eintrag «' + f.begriff + '» wirklich aus dem Wörterbuch löschen?\n\nDas lässt sich nicht rückgängig machen.')) return;
-            supabaseCall('woerter?id=eq.' + encodeURIComponent(f.id), { method: 'DELETE' })
-                .then(function() { f.offen = false; showToast('«' + f.begriff + '» gelöscht', 'success'); render(); })
-                .catch(function(e) { showToast('Löschen misslungen: ' + e.message, 'error'); });
-        }
-
         function renderWbGegen() {
             var h = '<div class="wz-box"><h3>🧪 Wörterbuch gegenprüfen</h3>';
-            h += '<p class="wz-muted" style="margin-bottom:8px;">Prüft das Wörterbuch selber: einmal alle Stichwörter '
-               + 'und Beispielsätze gegen die Schreibregeln, einmal auf hochdeutsche Wörter, die sich eingeschlichen haben.</p>';
+            h += '<p class="wz-muted" style="margin-bottom:8px;">Prüft alle Stichwörter und Beispielsätze gegen die '
+               + 'Schreibregeln. Zu jedem Treffer kannst du den ganzen Eintrag aufklappen und ihn von der KI '
+               + 'auf die Hausnorm bringen lassen – auch Beispielsatz, Bemerkung und Reim.</p>';
             h += '<div class="wz-row">';
             h += '<button class="btn" onclick="konsistenzPruefen()">📏 Schreibregeln prüfen</button>';
-            h += '<button class="btn" onclick="wbgPruefen()"' + (wbg.laeuft ? ' disabled' : '') + '>🇩🇪 Germanismen suchen</button>';
-            if (!kiBereit()) h += '<span class="wz-muted">Die Germanismus-Suche braucht einen API-Schlüssel.</span>';
             if (wbg.stand) h += '<span class="wz-muted">' + escHtml(wbg.stand) + '</span>';
             h += '</div>';
             h += '<div id="konsi-out" style="margin-top:12px;"></div>';
 
             var offen = wbg.funde.filter(function(f) { return f.offen; });
-            if (wbg.fertig && !offen.length) h += '<p class="wz-muted" style="margin-top:10px;">Keine verdächtigen Einträge (mehr).</p>';
             if (offen.length) {
-                h += '<p class="wz-muted" style="margin-top:12px;"><b>' + offen.length + ' verdächtige Einträge.</b> '
-                   + 'Bitte einzeln anschauen – gelöscht wird nur, was du ausdrücklich bestätigst.</p>';
+                h += '<p class="wz-muted" style="margin-top:12px;"><b>' + offen.length + ' Einträge mit Fundstellen.</b> '
+                   + 'Gespeichert wird nur, was du ausdrücklich bestätigst.</p>';
                 wbg.funde.forEach(function(f, i) {
                     if (!f.offen) return;
                     h += '<div style="border-top:1px solid var(--border-color);padding:8px 0;">';
                     h += '<div class="wz-row" style="align-items:center;">';
                     h += '<b>' + escHtml(f.begriff) + '</b>';
-                    if (f.wortart) h += '<span class="wz-muted">' + escHtml(f.wortart) + '</span>';
-                    if (f.vorschlag) h += '<span class="wz-muted">statt dessen: <b>' + escHtml(f.vorschlag) + '</b></span>';
-                    if (f.grund) h += '<span class="wz-muted">' + escHtml(f.grund) + '</span>';
+                    (f.regeln || []).slice(0, 6).forEach(function(r) {
+                        h += '<span class="wz-muted">' + escHtml(r.wort) + ' [' + escHtml(r.regel) + ']'
+                           + (r.vorschlag ? ' → <b>' + escHtml(r.vorschlag) + '</b>' : '')
+                           + ' <i>(' + escHtml(r.feld) + ')</i></span>';
+                    });
+                    if ((f.regeln || []).length > 6) h += '<span class="wz-muted">…</span>';
                     h += '<span style="flex:1;"></span>';
                     h += '<button class="wz-mini grau" onclick="wbgEintragLaden(' + i + ')">' + (f.offenGeklappt ? '▾ Eintrag' : '▸ ganzer Eintrag') + '</button>';
                     h += '<button class="wz-mini grau" onclick="wbgOeffnen(' + i + ')">🔎 im Wörterbuch</button>';
-                    h += '<button class="wz-mini grau" onclick="wbgVerwerfen(' + i + ')">behalten</button>';
-                    h += '<button class="wz-mini" style="background:var(--danger,#c0392b);" onclick="wbgLoeschen(' + i + ')">löschen</button>';
+                    h += '<button class="wz-mini grau" onclick="wbgVerwerfen(' + i + ')">erledigt</button>';
                     h += '</div>';
-                    if (f.synonyme) h += '<div class="wz-muted" style="font-size:12px;margin-left:6px;">Synonyme: ' + escHtml(f.synonyme) + '</div>';
                     h += wbgFeldHtml(f, i);
                     h += '</div>';
                 });
@@ -3572,7 +3501,7 @@
               }).catch(function() {});
         }
 
-        function kiBereit() { return !!(state.ki && state.ki.key); }
+        function kiBereit() { return BRUECKE.da || !!(state.ki && state.ki.key); }
 
         function kiSpeichern() {
             var k = (document.getElementById('ki-key') || {}).value || '';
@@ -3617,7 +3546,35 @@
             return kiFrageVerlauf(system, [{ role: 'user', content: user }], maxTokens, mitWebsuche);
         }
 
+        /* Läuft die App über die lokale Brücke? Dann geht die KI übers Claude-Abo
+           statt über einen API-Schlüssel. Wird beim Start einmal geprüft. */
+        var BRUECKE = { da: false, geprueft: false, claude: null };
+
+        function bruecke_pruefen() {
+            if (BRUECKE.geprueft) return Promise.resolve(BRUECKE.da);
+            BRUECKE.geprueft = true;
+            if (!/^https?:$/.test(location.protocol) || !/^(localhost|127\.0\.0\.1)$/.test(location.hostname))
+                return Promise.resolve(false);
+            return fetch('/bruecke/status').then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    if (d && d.bruecke) { BRUECKE.da = true; BRUECKE.claude = d.version || 'Claude Code'; }
+                    return BRUECKE.da;
+                }).catch(function() { return false; });
+        }
+
         function kiFrageVerlauf(system, messages, maxTokens, mitWebsuche) {
+            if (BRUECKE.da) {
+                return fetch('/bruecke/ki', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ system: system, messages: messages, max_tokens: maxTokens || 2000 })
+                }).then(function(r) {
+                    return r.json().then(function(d) {
+                        if (!r.ok || d.fehler) throw new Error(d.fehler || ('Brücke: Fehler ' + r.status));
+                        return d.text || '';
+                    });
+                });
+            }
             if (!kiBereit()) return Promise.reject(new Error('Kein API-Schlüssel hinterlegt'));
             var body = {
                 model: state.ki.modell,
@@ -4804,8 +4761,7 @@
 
         /* ═══════════ Konsistenzprüfung des Wörterbuchs ═══════════ */
         function konsistenzPruefen() {
-            var out = document.getElementById('konsi-out');
-            if (out) out.innerHTML = '<div class="loading" style="padding:14px;"><div class="spinner"></div></div>';
+            wbg.stand = 'Lade Wörterbuch…'; wbg.funde = []; wbg.fertig = false; render();
             var alle = [], pageSize = 1000, offset = 0;
             function batch() {
                 return supabaseCall('woerter?select=id,begriff,beispielsatz&limit=' + pageSize + '&offset=' + offset).then(function(d) {
@@ -4828,20 +4784,19 @@
                         });
                     });
                 });
-                if (!out) return;
-                if (!treffer.length) { out.innerHTML = '<p style="color:#2f7d32;">✓ Keine Regelverstösse gefunden (' + rows.length + ' Einträge geprüft).</p>'; return; }
-                var h = '<p><b>' + treffer.length + ' Fundstellen</b> in ' + rows.length + ' Einträgen:</p><div class="wz-liste">';
-                treffer.slice(0, 300).forEach(function(t) {
-                    h += '<div class="wz-item"><span class="wz-item-w">' + escHtml(t.wort) + '</span>'
-                       + '<span class="wz-badge wz-b-f">' + escHtml(t.regel) + '</span>'
-                       + '<span class="wz-item-m">in «' + escHtml(t.begriff) + '» (' + t.feld + ')'
-                       + (t.vorschlag ? ' → <b>' + escHtml(t.vorschlag) + '</b>' : '') + '</span>'
-                       + '<button class="wz-mini grau" onclick="showWordDetailById(' + t.id + ')">öffnen</button></div>';
+                // nach Eintrag bündeln, damit man den ganzen Datensatz überarbeiten kann
+                var proEintrag = {};
+                treffer.forEach(function(t) {
+                    var e = proEintrag[t.id] || (proEintrag[t.id] = { id: t.id, begriff: t.begriff, offen: true, regeln: [] });
+                    e.regeln.push({ wort: t.wort, regel: t.regel, vorschlag: t.vorschlag, feld: t.feld });
                 });
-                h += '</div>';
-                if (treffer.length > 300) h += '<p class="wz-muted">… weitere ' + (treffer.length - 300) + ' ausgeblendet.</p>';
-                out.innerHTML = h;
-            }).catch(function(e) { if (out) out.innerHTML = '<p style="color:#c62828;">Fehler: ' + escHtml(e.message) + '</p>'; });
+                wbg.funde = Object.keys(proEintrag).map(function(k) { return proEintrag[k]; })
+                    .sort(function(a, b) { return b.regeln.length - a.regeln.length; });
+                wbg.fertig = true;
+                wbg.stand = treffer.length + ' Fundstellen in ' + wbg.funde.length + ' von ' + rows.length + ' Einträgen';
+                if (!treffer.length) wbg.stand = '✓ Keine Regelverstösse in ' + rows.length + ' Einträgen';
+                render();
+            }).catch(function(e) { wbg.stand = 'Fehler: ' + e.message; render(); });
         }
 
         /* ═══════════ ÜBERSETZEN (Projekt-Werkstatt) ═══════════
@@ -6048,6 +6003,13 @@
         }
         
         function changeAdminTab(tab) { state.adminTab = tab; render(); }
+
+        // Brücke suchen, sobald die Seite steht
+        setTimeout(function() {
+            bruecke_pruefen().then(function(da) {
+                if (da) { showToast('Lokale Brücke gefunden – die KI läuft über dein Claude-Abo', 'success'); render(); }
+            });
+        }, 300);
         function updateCell(id, field, value) { var data = {}; data[field] = value || null; supabaseCall('woerter?id=eq.' + id, { method: 'PATCH', body: JSON.stringify(data) }); }
         function deleteRow(id) { if (!confirm('Löschen?')) return; supabaseCall('woerter?id=eq.' + id, { method: 'DELETE' }).then(function() { showToast('Gelöscht', 'success'); return loadPageData(state.currentPage, state.filter); }).then(function() { loadTotalCount(); render(); }); }
         
