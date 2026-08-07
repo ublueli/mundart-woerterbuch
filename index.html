@@ -340,6 +340,20 @@
         // API
         function supabaseCall(endpoint, options) {
             options = options || {};
+            var istLesen = !options.method || options.method === 'GET';
+            return supabaseRoh(endpoint, options).catch(function(e) {
+                // Netzabbrüche kommen als abgelehntes fetch ohne Antwort an
+                // («Failed to fetch», ERR_NETWORK_CHANGED). Beim Lesen ist ein
+                // zweiter Versuch gefahrlos, beim Schreiben nicht.
+                var netz = e && /Failed to fetch|NetworkError|Load failed/i.test(String(e.message || e));
+                if (!netz || !istLesen || options._versuch >= 2) throw e;
+                options._versuch = (options._versuch || 0) + 1;
+                return new Promise(function(w) { setTimeout(w, 600 * options._versuch); })
+                    .then(function() { return supabaseCall(endpoint, options); });
+            });
+        }
+
+        function supabaseRoh(endpoint, options) {
             return fetch(CONFIG.SUPABASE_URL + '/rest/v1/' + endpoint, {
                 method: options.method || 'GET',
                 headers: Object.assign({
@@ -2449,9 +2463,12 @@
 
         function dublettenSuchen() {
             dub.laeuft = true; dub.stand = 'Lade Wörterbuch…'; dub.gruppen = []; dub.fertig = false; render();
-            var alle = [], seite = 1000, ab = 0;
+            var alle = [], seite = 400, ab = 0;
             function holen() {
-                return supabaseCall('woerter?select=*&limit=' + seite + '&offset=' + ab + '&order=id.asc')
+                // Nur die Felder holen, die zum Zusammenführen gebraucht werden –
+                // «select=*» zieht Megabyte und reisst auf wackligen Leitungen ab.
+                var felder = 'id,' + DUB_FELDER.join(',');
+                return supabaseCall('woerter?select=' + felder + '&limit=' + seite + '&offset=' + ab + '&order=id.asc')
                     .then(function(d) {
                         if (d && d.length) {
                             alle = alle.concat(d); ab += seite;
