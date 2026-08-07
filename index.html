@@ -348,7 +348,9 @@
                     'Content-Type': 'application/json',
                     'Prefer': options.headers && options.headers['Prefer'] ? options.headers['Prefer'] : 'return=representation'
                 }, options.headers || {}),
-                body: options.body
+                // Objekte selber verpacken – sonst schickt fetch «[object Object]»
+                // und PostgREST antwortet mit 400.
+                body: (options.body && typeof options.body === 'object') ? JSON.stringify(options.body) : options.body
             }).then(function(res) {
                 var totalCount = res.headers.get('content-range');
                 if (totalCount) {
