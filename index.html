@@ -1451,7 +1451,10 @@
             name: '', format: '', abs: [], docxTeile: null, docxXml: '',
             geprueft: false, funde: [], gruppen: [], ansicht: 'gruppen',
             pos: 0, laeuft: false, stand: '', neueWoerter: [], uebernommen: 0,
-            germStufe: 'massvoll', kiFertig: false
+            germStufe: 'massvoll', kiFertig: false,
+            beschlossen: [],         // {wort, neu} – jede angenommene Ersetzung, für die Schlusskontrolle
+            hdUeberspringen: true,   // hochdeutsch wirkende Sätze in einer Replik übergehen
+            uebergangen: 0           // wie viele Sätze das betraf
         };
 
         /* ---------- ZIP lesen und schreiben (für .docx und .odt) ---------- */
@@ -1780,15 +1783,20 @@
             var deutsche = stkDeutscheFiguren();
             pruefLadeWortschatz().then(function(bekannt) {
                 stk.stand = 'Prüfe Schreibweise…'; render();
-                var funde = [];
+                var funde = [], uebergangen = 0;
                 stk.abs.forEach(function(a) {
+                    a.deutsch = false;
                     if (!a.pruefen) return;
-                    if (a.sprecher && deutsche[a.sprecher]) { a.deutsch = true; return; }
+                    if (stk.hdUeberspringen && a.sprecher && deutsche[a.sprecher]) { a.deutsch = true; return; }
                     var text = stkRedeText(a);
                     // Hochdeutsche Sätze mitten in einer Mundartreplik übergehen
-                    stkSaetze(text).forEach(function(sz) {
-                        if (sz.length > 25 && regelIstRegie(sz)) text = text.replace(sz, ' '.repeat(sz.length));
-                    });
+                    if (stk.hdUeberspringen) {
+                        stkSaetze(text).forEach(function(sz) {
+                            if (sz.length > 25 && regelIstRegie(sz)) {
+                                text = text.replace(sz, ' '.repeat(sz.length)); uebergangen++;
+                            }
+                        });
+                    }
                     var teile = text.split(/([A-Za-zÄÖÜäöüß'’-]+)/);
                     var pos = 0;
                     teile.forEach(function(t) {
@@ -1812,6 +1820,7 @@
                     });
                 });
                 stk.funde = funde;
+                stk.uebergangen = uebergangen;
                 stk.geprueft = true; stk.laeuft = false;
                 stk.stand = '';
                 stkGruppenBauen();
@@ -1885,15 +1894,45 @@
 
         function stkGruppeUebernehmen(gi) {
             var g = stk.gruppen[gi]; if (!g || !g.vorschlag) return;
-            var n = 0, gemacht = {};
-            g.idx.forEach(function(i) {
-                var f = stk.funde[i]; if (!f || !f.offen) return;
-                if (!gemacht[f.abs]) { n += stkErsetzen(f.abs, f.wort, f.vorschlag); gemacht[f.abs] = 1; }
-                f.offen = false;
-            });
+            // Der Entscheid gilt fürs ganze Stück, nicht nur für die gefundenen
+            // Stellen: Die Prüfung übergeht Absätze (Regieanweisungen, hochdeutsch
+            // wirkende Sätze), das Ersetzen darf das nicht auch noch tun.
+            var n = stkErsetzenGanz(g.wort, g.vorschlag);
+            g.idx.forEach(function(i) { if (stk.funde[i]) stk.funde[i].offen = false; });
             stk.uebernommen += n;
+            stkBeschlossen(g.wort, g.vorschlag);
             stkGruppenBauen(); render();
-            showToast(n + '× ersetzt', 'success');
+            var gefunden = g.idx.length;
+            showToast(n + '× ersetzt' + (n > gefunden ? ' (' + (n - gefunden) + ' davon ausserhalb der Trefferliste)' : ''), 'success');
+        }
+
+        /* Ein Wort im ganzen Dokument ersetzen und zählen. */
+        function stkErsetzenGanz(wort, neu) {
+            var n = 0;
+            for (var i = 0; i < stk.abs.length; i++) n += stkErsetzen(i, wort, neu);
+            return n;
+        }
+
+        function stkBeschlossen(wort, neu) {
+            if (!stk.beschlossen) stk.beschlossen = [];
+            var da = stk.beschlossen.some(function(b) { return b.wort === wort && b.neu === neu; });
+            if (!da) stk.beschlossen.push({ wort: wort, neu: neu });
+        }
+
+        /* Wie oft steht ein beschlossenes Wort noch im Text? */
+        function stkRestbestand() {
+            var raus = [];
+            (stk.beschlossen || []).forEach(function(b) {
+                var rx = new RegExp('(?<![A-Za-zÄÖÜäöü])' + b.wort.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-zÄÖÜäöü])', 'g');
+                var n = 0;
+                stk.abs.forEach(function(a) {
+                    var t = a.runs.map(function(r) { return r.text; }).join('');
+                    var m = t.match(rx);
+                    if (m) n += m.length;
+                });
+                if (n) raus.push({ wort: b.wort, neu: b.neu, anzahl: n });
+            });
+            return raus;
         }
 
         function stkGruppeVerwerfen(gi) {
@@ -1970,6 +2009,19 @@
         }
 
         function stkSpeichern(format) {
+            // Schlusskontrolle: Steht ein beschlossenes Wort noch irgendwo im Text?
+            var rest = stkRestbestand();
+            if (rest.length) {
+                var liste = rest.slice(0, 12).map(function(r) {
+                    return '· ' + r.wort + ' → ' + r.neu + '  (' + r.anzahl + '× noch im Text)';
+                }).join('\n');
+                if (rest.length > 12) liste += '\n· … und ' + (rest.length - 12) + ' weitere';
+                var w = 'Achtung: Von deinen Entscheiden stehen noch Stellen im Text:\n\n' + liste
+                      + '\n\nDas passiert, wenn ein Wort in einer Regieanweisung, im Vorspann oder '
+                      + 'in einer kursiven Passage steht – dort wird bewusst nichts ersetzt.\n\n'
+                      + 'Trotzdem speichern?';
+                if (!confirm(w)) return;
+            }
             var basis = (stk.name || 'text').replace(/\.[^.]+$/, '') + '_korrigiert';
             if (format === 'txt' || format === 'md') {
                 stkBlobLaden(new Blob([stkTextGanz()], { type: 'text/plain;charset=utf-8' }), basis + '.' + format);
@@ -2080,8 +2132,17 @@
                + '<option value="massvoll"' + (stk.germStufe === 'massvoll' ? ' selected' : '') + '>melden</option>'
                + '<option value="aus"' + (stk.germStufe === 'aus' ? ' selected' : '') + '>nicht melden</option>'
                + '</select></label>';
+            h += '<label class="wz-muted" style="display:flex;align-items:center;gap:6px;">'
+               + '<input type="checkbox"' + (stk.hdUeberspringen ? ' checked' : '')
+               + ' onchange="stk.hdUeberspringen=this.checked"> hochdeutsch wirkende Sätze übergehen</label>';
             if (stk.uebernommen) h += '<span class="wz-badge wz-b-f">' + stk.uebernommen + ' Änderungen</span>';
-            h += '</div></div>';
+            h += '</div>';
+            if (stk.geprueft && stk.uebergangen) {
+                h += '<p class="wz-muted" style="margin-top:8px;font-size:12px;">'
+                   + stk.uebergangen + ' Sätze hat die Prüfung als hochdeutsch übergangen. '
+                   + 'Fehlt dir ein Wort in der Trefferliste: Haken wegnehmen und nochmals prüfen.</p>';
+            }
+            h += '</div>';
 
             if (!stk.geprueft) { h += stkGermHtml(); return h + '</div>'; }
 
@@ -2102,7 +2163,29 @@
             h += stkGermHtml();
 
             // Export
-            h += '<div class="wz-box"><h3>Speichern</h3><div class="wz-row">';
+            h += '<div class="wz-box"><h3>Speichern</h3>';
+
+            // Schlusskontrolle: was von den Entscheiden steht noch im Text?
+            var rest = stkRestbestand();
+            if (stk.beschlossen && stk.beschlossen.length) {
+                if (!rest.length) {
+                    h += '<p class="wz-muted" style="margin-bottom:8px;">✓ Alle ' + stk.beschlossen.length
+                       + ' Entscheide stecken vollständig im Text (' + stk.uebernommen + ' Ersetzungen).</p>';
+                } else {
+                    h += '<div style="border:1px solid #d97706;border-radius:6px;padding:8px 10px;margin-bottom:10px;">';
+                    h += '<b style="color:#d97706;">Nicht überall ersetzt</b>';
+                    h += '<p class="wz-muted" style="margin:4px 0 6px;">Diese Stellen stehen in einer Regieanweisung, '
+                       + 'im Vorspann oder in einer kursiven Passage – dort fasst die App nichts an. '
+                       + 'Prüfe sie von Hand, wenn sie doch zur Rede gehören.</p>';
+                    h += '<p style="font-size:13px;line-height:1.7;">' + rest.slice(0, 30).map(function(r) {
+                        return escHtml(r.wort) + ' → <b>' + escHtml(r.neu) + '</b> <span class="wz-muted">('
+                             + r.anzahl + '×)</span>';
+                    }).join(' · ') + (rest.length > 30 ? ' <span class="wz-muted">… und ' + (rest.length - 30) + ' weitere</span>' : '') + '</p>';
+                    h += '</div>';
+                }
+            }
+
+            h += '<div class="wz-row">';
             if (stk.format === 'docx') h += '<button class="btn" onclick="stkSpeichern(\'docx\')">⬇️ als .docx</button>';
             h += '<button class="wz-mini grau" onclick="stkSpeichern(\'html\')">.html</button>';
             h += '<button class="wz-mini grau" onclick="stkSpeichern(\'md\')">.md</button>';
